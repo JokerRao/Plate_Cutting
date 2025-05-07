@@ -85,9 +85,16 @@ export default function LayoutPage() {
           setProjectName(data.name);
           // 获取最后一个元素（包含元数据）
           const metadata = data.cutted[data.cutted.length - 1]?.metadata || {};
-          console.log('Metadata:', metadata); // 添加日志
-          setOrders(metadata.orders || []);
-          setOthers(metadata.others || []);
+          console.log('Metadata:', metadata);
+          
+          // 确保 orders 和 others 数据正确设置
+          const ordersData = metadata.orders || [];
+          const othersData = metadata.others || [];
+          console.log('Orders data:', ordersData);
+          console.log('Others data:', othersData);
+          
+          setOrders(ordersData);
+          setOthers(othersData);
           
           // 移除最后一个元素（元数据），只保留切板方案
           const cuttingPlans = data.cutted.slice(0, -1);
@@ -95,8 +102,9 @@ export default function LayoutPage() {
           setAllCutted(cuttingPlans);
           
           if (cuttingPlans[pageNum - 1]) {
-            setLayoutData(cuttingPlans[pageNum - 1]);
-            console.log('Current page data:', cuttingPlans[pageNum - 1]); // 添加日志
+            const currentPageData = cuttingPlans[pageNum - 1];
+            console.log('Current page data:', currentPageData);
+            setLayoutData(currentPageData);
           }
         }
       } catch (error) {
@@ -256,19 +264,22 @@ export default function LayoutPage() {
   }, []);
 
   const renderTable = (title: string, data: any[], type: 'orders' | 'others') => {
-    console.log(`Rendering ${title} table:`, { data, type }); // 添加日志
+    console.log(`Rendering ${title} table:`, { data, type });
     
     // 计算当前页面中每个ID的使用数量
     const pageUsageCount = new Map<string, number>();
     if (layoutData && layoutData.cutted) {
       layoutData.cutted.forEach((piece: any) => {
         const id = piece.id;
-        if ((type === 'orders' && !piece.is_stock) || (type === 'others' && piece.is_stock)) {
+        const isStock = piece.is_stock === 1;
+        console.log('Piece:', { id, isStock, type });
+        
+        if ((type === 'orders' && !isStock) || (type === 'others' && isStock)) {
           pageUsageCount.set(id, (pageUsageCount.get(id) || 0) + 1);
         }
       });
     }
-    console.log('Page usage count:', Object.fromEntries(pageUsageCount)); // 添加日志
+    console.log('Page usage count:', Object.fromEntries(pageUsageCount));
 
     // 计算所有页面中的使用数量
     const totalUsageCount = new Map<string, number>();
@@ -277,23 +288,28 @@ export default function LayoutPage() {
         if (page.cutted) {
           page.cutted.forEach((piece: any) => {
             const id = piece.id;
-            if ((type === 'orders' && !piece.is_stock) || (type === 'others' && piece.is_stock)) {
+            const isStock = piece.is_stock === 1;
+            if ((type === 'orders' && !isStock) || (type === 'others' && isStock)) {
               totalUsageCount.set(id, (totalUsageCount.get(id) || 0) + 1);
             }
           });
         }
       });
     }
-    console.log('Total usage count:', Object.fromEntries(totalUsageCount)); // 添加日志
+    console.log('Total usage count:', Object.fromEntries(totalUsageCount));
 
     // 过滤数据，只显示在当前页面有使用的零件
     const filteredData = data.filter((item) => {
       const pageCount = pageUsageCount.get(item.id) || 0;
+      console.log('Filtering item:', { id: item.id, pageCount });
       return pageCount > 0;
     });
-    console.log('Filtered data:', filteredData); // 添加日志
+    console.log('Filtered data:', filteredData);
 
-    if (filteredData.length === 0) return null;
+    if (filteredData.length === 0) {
+      console.log(`No data to display for ${title}`);
+      return null;
+    }
 
     return (
       <div className="flex-1">
