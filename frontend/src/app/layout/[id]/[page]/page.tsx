@@ -280,8 +280,11 @@ export default function LayoutPage() {
       });
     }
 
-    // 显示所有数据，不再过滤
-    const filteredData = data;
+    // 过滤数据，只显示在当前页面有使用的零件
+    const filteredData = data.filter((item) => {
+      const pageCount = pageUsageCount.get(item.id) || 0;
+      return pageCount > 0;
+    });
 
     if (filteredData.length === 0) return null;
 
