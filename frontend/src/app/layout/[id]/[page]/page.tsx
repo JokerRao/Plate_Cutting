@@ -280,11 +280,10 @@ export default function LayoutPage() {
       });
     }
 
-    // 过滤掉总数量和本页数量都为0的行
+    // 过滤数据，只显示在当前页面有使用的零件
     const filteredData = data.filter((item) => {
-      const total = type === 'others' ? totalUsageCount.get(item.id) || 0 : item.quantity;
-      const page = pageUsageCount.get(item.id) || 0;
-      return total > 0 && page > 0;
+      const pageCount = pageUsageCount.get(item.id) || 0;
+      return pageCount > 0;
     });
 
     if (filteredData.length === 0) return null;
