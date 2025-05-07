@@ -245,7 +245,7 @@ def optimize_cutting(plates, orders, others, optim = 0, n_plate = None, saw_blad
                         for p in orders if p.get('quantity', 0) > 0]
     
     # 转换库存板格式 (others)
-    stock_plates_list = [(p['length'], p['width'], p.get('id', ''))
+    stock_plates_list = [(p['length'], p['width'], f"R{p.get('id', '')}")
                         for p in others if p.get('length', 0) > 0 and p.get('width', 0) > 0] if others else []
 
     logger.info(f"Processed input: {len(big_plate_list)} plates, {len(small_plates_list)} orders, {len(stock_plates_list)} stock items")
