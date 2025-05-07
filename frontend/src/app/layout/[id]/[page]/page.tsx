@@ -415,7 +415,7 @@ export default function LayoutPage() {
         </div>
 
         {/* 下方表格 */}
-        <div className="flex gap-4 h-56">
+        <div className="flex gap-4 h-80 overflow-y-auto">
           {renderTable('零件信息', orders, 'orders')}
           {renderTable('常用尺寸信息', others, 'others')}
         </div>
