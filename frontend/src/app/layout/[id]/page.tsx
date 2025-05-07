@@ -16,23 +16,17 @@ const COLOR_POOL = [
 // 添加一个新的函数来获取总体统计信息
 const getTotalSummary = (allPages: any[]) => {
   const summary = {
-    parts: new Map<string, { length: number, width: number, quantity: number }>(),
+    parts: new Map<string, { length: number, width: number, quantity: number, client: string }>(),
     reusable: new Map<string, { length: number, width: number, quantity: number, client: string }>()
   };
 
   allPages.forEach(page => {
     page.cutted.forEach((piece: any) => {
       const id = piece.id;
-      const isStock = piece.is_stock;
-      const map = !isStock ? summary.parts : summary.reusable;
+      const map = !piece.is_stock ? summary.parts : summary.reusable;
       
       if (!map.has(id)) {
-        map.set(id, { 
-          length: piece.length, 
-          width: piece.width, 
-          quantity: 1,
-          ...(isStock ? { client: '' } : {})
-        });
+        map.set(id, { length: piece.length, width: piece.width, quantity: 1, client: '' });
       } else {
         const existing = map.get(id)!;
         existing.quantity += 1;
@@ -42,7 +36,7 @@ const getTotalSummary = (allPages: any[]) => {
 
   return {
     parts: Array.from(summary.parts.entries()).map(([id, data]) => ({ id, ...data })),
-    reusable: Array.from(summary.reusable.entries()).map(([id, data]) => ({ id: `R${id}`, ...data }))
+    reusable: Array.from(summary.reusable.entries()).map(([id, data]) => ({ id, ...data }))
   };
 };
 

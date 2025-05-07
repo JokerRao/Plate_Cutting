@@ -221,7 +221,7 @@ export default function ProjectPage() {
     let direction: 'asc' | 'desc' | null = 'asc'
     if (sortConfig && sortConfig.key === key) {
       if (sortConfig.direction === 'asc') {
-        direction = 'desc'
+      direction = 'desc'
       } else if (sortConfig.direction === 'desc') {
         direction = null
       }

@@ -863,7 +863,7 @@ export default function ProjectDetailPage() {
                         ref={provided.innerRef}
                         onKeyDown={handleKeyDown}
                       >
-                        {others.map((other, index) => (
+                  {others.map((other, index) => (
                           <Draggable 
                             key={other.id} 
                             draggableId={`other-${other.id}`} 
@@ -873,78 +873,78 @@ export default function ProjectDetailPage() {
                               <tr
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
-                                className="hover:bg-gray-50"
-                                onClick={(e) => handleRowClick('others', index, e)}
+                      className="hover:bg-gray-50"
+                      onClick={(e) => handleRowClick('others', index, e)}
                                 data-row={`others-${index}`}
                               >
                                 <td
                                   className="border p-2 cursor-move bg-gray-50 hover:bg-gray-100"
                                   {...provided.dragHandleProps}
-                                >
+                    >
                                   {index + 1}
                                 </td>
-                                <td 
-                                  className={editableCellClass}
-                                  contentEditable
-                                  suppressContentEditableWarning
-                                  onBlur={(e) => {
-                                    const value = e.currentTarget.textContent || '0';
-                                    if (validateNumber(value)) {
-                                      handleCellChange('others', index, 'length', parseInt(value));
-                                    } else {
-                                      alert('长度必须为正整数');
-                                      e.currentTarget.textContent = other.length.toString();
-                                    }
-                                  }}
-                                >
-                                  {other.length}
-                                </td>
-                                <td 
-                                  className={editableCellClass}
-                                  contentEditable
-                                  suppressContentEditableWarning
-                                  onBlur={(e) => {
-                                    const value = e.currentTarget.textContent || '0';
-                                    if (validateNumber(value)) {
-                                      handleCellChange('others', index, 'width', parseInt(value));
-                                    } else {
-                                      alert('宽度必须为正整数');
-                                      e.currentTarget.textContent = other.width.toString();
-                                    }
-                                  }}
-                                >
-                                  {other.width}
-                                </td>
-                                <td 
-                                  className={editableCellClass}
-                                  contentEditable
-                                  suppressContentEditableWarning
-                                  onBlur={(e) => handleCellChange('others', index, 'client', e.currentTarget.textContent || '')}
-                                >
-                                  {other.client}
-                                </td>
-                                <td 
-                                  className={editableCellClass}
-                                  contentEditable
-                                  suppressContentEditableWarning
-                                  onBlur={(e) => handleCellChange('others', index, 'description', e.currentTarget.textContent || '')}
-                                >
-                                  {other.description}
-                                </td>
-                                <td className="border p-2">
-                                  <button
-                                    onClick={() => deleteRow('others', index)}
-                                    className="text-red-500 hover:text-red-700"
-                                  >
-                                    删除
-                                  </button>
-                                </td>
-                              </tr>
+                      <td 
+                        className={editableCellClass}
+                        contentEditable
+                        suppressContentEditableWarning
+                        onBlur={(e) => {
+                          const value = e.currentTarget.textContent || '0';
+                          if (validateNumber(value)) {
+                            handleCellChange('others', index, 'length', parseInt(value));
+                          } else {
+                            alert('长度必须为正整数');
+                            e.currentTarget.textContent = other.length.toString();
+                          }
+                        }}
+                      >
+                        {other.length}
+                      </td>
+                      <td 
+                        className={editableCellClass}
+                        contentEditable
+                        suppressContentEditableWarning
+                        onBlur={(e) => {
+                          const value = e.currentTarget.textContent || '0';
+                          if (validateNumber(value)) {
+                            handleCellChange('others', index, 'width', parseInt(value));
+                          } else {
+                            alert('宽度必须为正整数');
+                            e.currentTarget.textContent = other.width.toString();
+                          }
+                        }}
+                      >
+                        {other.width}
+                      </td>
+                      <td 
+                        className={editableCellClass}
+                        contentEditable
+                        suppressContentEditableWarning
+                        onBlur={(e) => handleCellChange('others', index, 'client', e.currentTarget.textContent || '')}
+                      >
+                        {other.client}
+                      </td>
+                      <td 
+                        className={editableCellClass}
+                        contentEditable
+                        suppressContentEditableWarning
+                        onBlur={(e) => handleCellChange('others', index, 'description', e.currentTarget.textContent || '')}
+                      >
+                        {other.description}
+                      </td>
+                      <td className="border p-2">
+                        <button
+                          onClick={() => deleteRow('others', index)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          删除
+                        </button>
+                      </td>
+                    </tr>
                             )}
                           </Draggable>
-                        ))}
+                  ))}
                         {provided.placeholder}
-                      </tbody>
+                </tbody>
                     )}
                   </Droppable>
                 </DragDropContext>

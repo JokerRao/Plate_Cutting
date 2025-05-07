@@ -85,16 +85,8 @@ export default function LayoutPage() {
           setProjectName(data.name);
           // 获取最后一个元素（包含元数据）
           const metadata = data.cutted[data.cutted.length - 1]?.metadata || {};
-          console.log('Metadata:', metadata);
-          
-          // 确保 orders 和 others 数据正确设置
-          const ordersData = metadata.orders || [];
-          const othersData = metadata.others || [];
-          console.log('Orders data:', ordersData);
-          console.log('Others data:', othersData);
-          
-          setOrders(ordersData);
-          setOthers(othersData);
+          setOrders(metadata.orders || []);
+          setOthers(metadata.others || []);
           
           // 移除最后一个元素（元数据），只保留切板方案
           const cuttingPlans = data.cutted.slice(0, -1);
@@ -102,9 +94,7 @@ export default function LayoutPage() {
           setAllCutted(cuttingPlans);
           
           if (cuttingPlans[pageNum - 1]) {
-            const currentPageData = cuttingPlans[pageNum - 1];
-            console.log('Current page data:', currentPageData);
-            setLayoutData(currentPageData);
+            setLayoutData(cuttingPlans[pageNum - 1]);
           }
         }
       } catch (error) {
@@ -264,22 +254,16 @@ export default function LayoutPage() {
   }, []);
 
   const renderTable = (title: string, data: any[], type: 'orders' | 'others') => {
-    console.log(`Rendering ${title} table:`, { data, type });
-    
     // 计算当前页面中每个ID的使用数量
     const pageUsageCount = new Map<string, number>();
     if (layoutData && layoutData.cutted) {
       layoutData.cutted.forEach((piece: any) => {
         const id = piece.id;
-        const isStock = piece.is_stock === 1;
-        console.log('Piece:', { id, isStock, type });
-        
-        if ((type === 'orders' && !isStock) || (type === 'others' && isStock)) {
+        if ((type === 'orders' && !piece.is_stock) || (type === 'others' && piece.is_stock)) {
           pageUsageCount.set(id, (pageUsageCount.get(id) || 0) + 1);
         }
       });
     }
-    console.log('Page usage count:', Object.fromEntries(pageUsageCount));
 
     // 计算所有页面中的使用数量
     const totalUsageCount = new Map<string, number>();
@@ -288,30 +272,21 @@ export default function LayoutPage() {
         if (page.cutted) {
           page.cutted.forEach((piece: any) => {
             const id = piece.id;
-            const isStock = piece.is_stock === 1;
-            if ((type === 'orders' && !isStock) || (type === 'others' && isStock)) {
+            if ((type === 'orders' && !piece.is_stock) || (type === 'others' && piece.is_stock)) {
               totalUsageCount.set(id, (totalUsageCount.get(id) || 0) + 1);
             }
           });
         }
       });
     }
-    console.log('Total usage count:', Object.fromEntries(totalUsageCount));
 
     // 过滤数据，只显示在当前页面有使用的零件
     const filteredData = data.filter((item) => {
-      // 对于库存板，检查原始ID（不带R前缀）
-      const itemId = type === 'others' ? item.id : item.id;
-      const pageCount = pageUsageCount.get(itemId) || 0;
-      console.log('Filtering item:', { id: itemId, pageCount, originalId: item.id });
+      const pageCount = pageUsageCount.get(item.id) || 0;
       return pageCount > 0;
     });
-    console.log('Filtered data:', filteredData);
 
-    if (filteredData.length === 0) {
-      console.log(`No data to display for ${title}`);
-      return null;
-    }
+    if (filteredData.length === 0) return null;
 
     return (
       <div className="flex-1">
@@ -329,21 +304,17 @@ export default function LayoutPage() {
             </tr>
           </thead>
           <tbody>
-            {filteredData.map((item) => {
-              // 对于库存板，使用原始ID（不带R前缀）来获取使用数量
-              const itemId = type === 'others' ? item.id : item.id;
-              return (
-                <tr key={item.id} className={type === 'orders' ? 'bg-blue-200' : 'bg-yellow-200'}>
-                  <td className="border p-2">{type === 'others' ? `R${item.id}` : item.id}</td>
-                  <td className="border p-2">{item.length}</td>
-                  <td className="border p-2">{item.width}</td>
-                  <td className="border p-2">{type === 'others' ? totalUsageCount.get(itemId) || 0 : item.quantity}</td>
-                  <td className="border p-2">{pageUsageCount.get(itemId) || 0}</td>
-                  {type === 'others' && <td className="border p-2">{item.client}</td>}
-                  <td className="border p-2">{item.description}</td>
-                </tr>
-              );
-            })}
+            {filteredData.map((item) => (
+              <tr key={item.id} className={type === 'orders' ? 'bg-blue-200' : 'bg-yellow-200'}>
+                <td className="border p-2">{type === 'others' ? `R${item.id}` : item.id}</td>
+                <td className="border p-2">{item.length}</td>
+                <td className="border p-2">{item.width}</td>
+                <td className="border p-2">{type === 'others' ? totalUsageCount.get(item.id) || 0 : item.quantity}</td>
+                <td className="border p-2">{pageUsageCount.get(item.id) || 0}</td>
+                {type === 'others' && <td className="border p-2">{item.client}</td>}
+                <td className="border p-2">{item.description}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
