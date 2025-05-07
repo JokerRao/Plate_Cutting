@@ -21,14 +21,14 @@ const getTotalSummary = (allPages: any[]) => {
   };
 
   allPages.forEach(page => {
-    page.cutted.forEach(([,, length, width, type, id]: number[]) => {
-      const key = `${id}`;
-      const map = type === 0 ? summary.parts : summary.reusable;
+    page.cutted.forEach((piece: any) => {
+      const id = piece.id;
+      const map = !piece.is_stock ? summary.parts : summary.reusable;
       
-      if (!map.has(key)) {
-        map.set(key, { length, width, quantity: 1, client: '' });
+      if (!map.has(id)) {
+        map.set(id, { length: piece.length, width: piece.width, quantity: 1, client: '' });
       } else {
-        const existing = map.get(key)!;
+        const existing = map.get(id)!;
         existing.quantity += 1;
       }
     });
@@ -49,13 +49,13 @@ export default function LayoutStatsPage() {
   const [clients, setClients] = useState<{ [key: string]: string }>({});
 
   // 获取零件和常用尺寸统计
-  const getPartsSummary = (parts: number[][]) => {
+  const getPartsSummary = (parts: any[]) => {
     const partsMap = new Map<string, number>();
     const reusableMap = new Map<string, number>();
     
-    parts.forEach(([,, length, width, type, id]) => {
-      const size = `${id}: ${length}x${width}`;
-      if (type === 0) {
+    parts.forEach((piece) => {
+      const size = `${piece.id}: ${piece.length}x${piece.width}`;
+      if (!piece.is_stock) {
         // 零件
         partsMap.set(size, (partsMap.get(size) || 0) + 1);
       } else {
@@ -118,17 +118,21 @@ export default function LayoutStatsPage() {
     const fetchData = async () => {
       const { data } = await supabase
         .from('Projects')
-        .select('name, cutted, others')
+        .select('name, cutted')
         .eq('id', projectId)
         .single();
       
       if (data) {
         setProjectName(data.name);
-        setCutted(data.cutted || []);
+        // 获取最后一个元素（包含元数据）
+        const metadata = data.cutted[data.cutted.length - 1]?.metadata || {};
+        // 移除最后一个元素（元数据），只保留切板方案
+        const cuttingPlans = data.cutted.slice(0, -1);
+        setCutted(cuttingPlans);
         
         // 构建客户信息映射
         const clientMap: { [key: string]: string } = {};
-        (data.others || []).forEach((item: any) => {
+        (metadata.others || []).forEach((item: any) => {
           clientMap[item.id] = item.client || '';
         });
         setClients(clientMap);
