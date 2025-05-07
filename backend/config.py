@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "debug"  # 默认值，可通过环境变量 LOG_LEVEL 覆盖
     DEBUG: bool = True  # 默认值，可通过环境变量 DEBUG 覆盖
     
+    # CORS Configuration
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000"
+    ]  # 默认值，可通过环境变量 CORS_ORIGINS 覆盖
+    CORS_ALLOW_CREDENTIALS: bool = True  # 默认值，可通过环境变量 CORS_ALLOW_CREDENTIALS 覆盖
+    CORS_ALLOW_METHODS: list[str] = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]  # 默认值，可通过环境变量 CORS_ALLOW_METHODS 覆盖
+    CORS_ALLOW_HEADERS: list[str] = ["*"]  # 默认值，可通过环境变量 CORS_ALLOW_HEADERS 覆盖
+    CORS_EXPOSE_HEADERS: list[str] = ["*"]  # 默认值，可通过环境变量 CORS_EXPOSE_HEADERS 覆盖
+    CORS_MAX_AGE: int = 3600  # 默认值，可通过环境变量 CORS_MAX_AGE 覆盖
+    
     # Concurrency Configuration
     WORKERS: int = 1  # 默认值，可通过环境变量 WORKERS 覆盖
     BACKLOG: int = 2048  # 默认值，可通过环境变量 BACKLOG 覆盖

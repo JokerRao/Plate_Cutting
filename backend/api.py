@@ -48,21 +48,14 @@ def create_app(settings: Settings):
     )
     
     # Add middleware
-    origins = [
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "https://platecutting-production.up.railway.app",
-        "https://*.railway.app",
-    ]
-    
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
-        expose_headers=["*"],
-        max_age=3600,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+        allow_methods=settings.CORS_ALLOW_METHODS,
+        allow_headers=settings.CORS_ALLOW_HEADERS,
+        expose_headers=settings.CORS_EXPOSE_HEADERS,
+        max_age=settings.CORS_MAX_AGE,
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1000)
