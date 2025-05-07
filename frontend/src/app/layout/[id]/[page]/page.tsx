@@ -259,7 +259,8 @@ export default function LayoutPage() {
     if (layoutData && layoutData.cutted) {
       layoutData.cutted.forEach((piece: any) => {
         const id = piece.id;
-        if ((type === 'orders' && !piece.is_stock) || (type === 'others' && piece.is_stock)) {
+        const isStock = piece.is_stock === 1;
+        if ((type === 'orders' && !isStock) || (type === 'others' && isStock)) {
           pageUsageCount.set(id, (pageUsageCount.get(id) || 0) + 1);
         }
       });
@@ -272,7 +273,8 @@ export default function LayoutPage() {
         if (page.cutted) {
           page.cutted.forEach((piece: any) => {
             const id = piece.id;
-            if ((type === 'orders' && !piece.is_stock) || (type === 'others' && piece.is_stock)) {
+            const isStock = piece.is_stock === 1;
+            if ((type === 'orders' && !isStock) || (type === 'others' && isStock)) {
               totalUsageCount.set(id, (totalUsageCount.get(id) || 0) + 1);
             }
           });
