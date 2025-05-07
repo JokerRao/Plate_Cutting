@@ -258,7 +258,7 @@ export default function LayoutPage() {
     const pageUsageCount = new Map<string, number>();
     if (layoutData && layoutData.cutted) {
       layoutData.cutted.forEach((piece: any) => {
-        const id = piece.id;
+        const id = String(piece.id);
         if ((type === 'orders' && !piece.is_stock) || (type === 'others' && piece.is_stock)) {
           pageUsageCount.set(id, (pageUsageCount.get(id) || 0) + 1);
         }
@@ -271,7 +271,7 @@ export default function LayoutPage() {
       allCutted.forEach(page => {
         if (page.cutted) {
           page.cutted.forEach((piece: any) => {
-            const id = piece.id;
+            const id = String(piece.id);
             if ((type === 'orders' && !piece.is_stock) || (type === 'others' && piece.is_stock)) {
               totalUsageCount.set(id, (totalUsageCount.get(id) || 0) + 1);
             }
@@ -282,7 +282,7 @@ export default function LayoutPage() {
 
     // 过滤数据，只显示在当前页面有使用的零件
     const filteredData = data.filter((item) => {
-      const pageCount = pageUsageCount.get(item.id) || 0;
+      const pageCount = pageUsageCount.get(String(item.id)) || 0;
       return pageCount > 0;
     });
 
@@ -309,8 +309,8 @@ export default function LayoutPage() {
                 <td className="border p-2">{type === 'others' ? `R${item.id}` : item.id}</td>
                 <td className="border p-2">{item.length}</td>
                 <td className="border p-2">{item.width}</td>
-                <td className="border p-2">{type === 'others' ? totalUsageCount.get(item.id) || 0 : item.quantity}</td>
-                <td className="border p-2">{pageUsageCount.get(item.id) || 0}</td>
+                <td className="border p-2">{type === 'others' ? totalUsageCount.get(String(item.id)) || 0 : item.quantity}</td>
+                <td className="border p-2">{pageUsageCount.get(String(item.id)) || 0}</td>
                 {type === 'others' && <td className="border p-2">{item.client}</td>}
                 <td className="border p-2">{item.description}</td>
               </tr>
