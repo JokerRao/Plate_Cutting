@@ -68,7 +68,7 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const handleRouteChange = (url: string) => {
+  const handleRouteChange = () => {
     if (hasChanges) {
       if (!window.confirm('有未保存的更改，是否保存？')) {
         return;
@@ -79,13 +79,19 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
-    router.events?.on('routeChangeStart', handleRouteChange);
+    
+    // 使用 navigation 事件替代 router.events
+    const handleNavigation = () => {
+      handleRouteChange();
+    };
+    
+    window.addEventListener('popstate', handleNavigation);
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      router.events?.off('routeChangeStart', handleRouteChange);
+      window.removeEventListener('popstate', handleNavigation);
     };
-  }, [hasChanges]);
+  }, [hasChanges, router]);
 
   const validateNumber = (value: string): boolean => {
     const num = Number(value);
