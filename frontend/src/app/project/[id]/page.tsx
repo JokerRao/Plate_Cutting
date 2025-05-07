@@ -436,8 +436,8 @@ export default function ProjectDetailPage() {
           plates,
           orders,
           others,
-          optimization,
-          saw_blade: sawBlade
+          optimization: Boolean(optimization),
+          saw_blade: Number(sawBlade) || 4
         }),
       });
 
