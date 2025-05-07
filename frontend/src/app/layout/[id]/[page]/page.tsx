@@ -300,8 +300,10 @@ export default function LayoutPage() {
 
     // 过滤数据，只显示在当前页面有使用的零件
     const filteredData = data.filter((item) => {
-      const pageCount = pageUsageCount.get(item.id) || 0;
-      console.log('Filtering item:', { id: item.id, pageCount });
+      // 对于库存板，检查原始ID（不带R前缀）
+      const itemId = type === 'others' ? item.id : item.id;
+      const pageCount = pageUsageCount.get(itemId) || 0;
+      console.log('Filtering item:', { id: itemId, pageCount, originalId: item.id });
       return pageCount > 0;
     });
     console.log('Filtered data:', filteredData);
@@ -327,17 +329,21 @@ export default function LayoutPage() {
             </tr>
           </thead>
           <tbody>
-            {filteredData.map((item) => (
-              <tr key={item.id} className={type === 'orders' ? 'bg-blue-200' : 'bg-yellow-200'}>
-                <td className="border p-2">{type === 'others' ? `R${item.id}` : item.id}</td>
-                <td className="border p-2">{item.length}</td>
-                <td className="border p-2">{item.width}</td>
-                <td className="border p-2">{type === 'others' ? totalUsageCount.get(item.id) || 0 : item.quantity}</td>
-                <td className="border p-2">{pageUsageCount.get(item.id) || 0}</td>
-                {type === 'others' && <td className="border p-2">{item.client}</td>}
-                <td className="border p-2">{item.description}</td>
-              </tr>
-            ))}
+            {filteredData.map((item) => {
+              // 对于库存板，使用原始ID（不带R前缀）来获取使用数量
+              const itemId = type === 'others' ? item.id : item.id;
+              return (
+                <tr key={item.id} className={type === 'orders' ? 'bg-blue-200' : 'bg-yellow-200'}>
+                  <td className="border p-2">{type === 'others' ? `R${item.id}` : item.id}</td>
+                  <td className="border p-2">{item.length}</td>
+                  <td className="border p-2">{item.width}</td>
+                  <td className="border p-2">{type === 'others' ? totalUsageCount.get(itemId) || 0 : item.quantity}</td>
+                  <td className="border p-2">{pageUsageCount.get(itemId) || 0}</td>
+                  {type === 'others' && <td className="border p-2">{item.client}</td>}
+                  <td className="border p-2">{item.description}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
