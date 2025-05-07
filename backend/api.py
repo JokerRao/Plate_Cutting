@@ -106,7 +106,7 @@ class CuttingRequest(BaseModel):
     others: Optional[List[StockPlate]] = None
     optimization: bool = Field(False, description="Whether to optimize stock plate placement")
     plate_count: Optional[int] = None
-    saw_blade: int = Field(None, gt=0, description="Saw blade thickness in mm")
+    saw_blade: Optional[int] = Field(None, gt=0, description="Saw blade thickness in mm")
 
 class CuttingResponse(BaseModel):
     code: int = Field(..., description="Response code, 0 for success, other values for errors")
