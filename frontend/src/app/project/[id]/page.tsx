@@ -348,7 +348,14 @@ export default function ProjectDetailPage() {
   };
 
   const addNewRow = (type: 'plates' | 'orders' | 'others') => {
-    const newRow = { id: 0, width: 0, length: 0, quantity: 1, description: '', client: '' };
+    const newRow = {
+      id: type === 'plates' ? plates.length + 1 : type === 'orders' ? orders.length + 1 : others.length + 1,
+      length: 0,
+      width: 0,
+      quantity: type === 'others' ? 0 : 1,
+      description: '',
+      ...(type === 'others' && { client: '' })
+    };
     switch(type) {
       case 'plates':
         setPlates(prev => [...prev, { ...newRow, id: prev.length + 1 }]);
