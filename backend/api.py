@@ -9,7 +9,6 @@ from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Union
 from config import Settings, get_settings
-from db import sync_cutting_results
 from main import optimize_cutting
 import logging
 import asyncio
@@ -23,7 +22,6 @@ ERROR_CODES = {
     1004: "Insufficient plates for orders",
     1005: "All pieces too large for available plates",
     1006: "Invalid quantity specified",
-    2001: "Database sync failed",
     5000: "Internal server error"
 }
 
@@ -99,8 +97,6 @@ class CuttingPlan(BaseModel):
     cutted: List[CutPiece]
 
 class CuttingRequest(BaseModel):
-    uid: str = Field(..., description="User ID")
-    project_id: str = Field(..., description="Project ID")
     plates: List[Plate]
     orders: List[Order]
     others: Optional[List[StockPlate]] = None
@@ -163,18 +159,18 @@ async def optimize_plates(
     settings: Settings = Depends(get_settings)
 ):
     """
-    Optimize cutting patterns for given plates and orders and sync results to Supabase
+    Optimize cutting patterns for given plates and orders
     
     Args:
         request: The HTTP request object
-        cutting_request: CuttingRequest object containing user ID, project ID, plates, orders, and optimization parameters
+        cutting_request: CuttingRequest object containing plates, orders, and optimization parameters
         settings: Application settings
         
     Returns:
         CuttingResponse object with optimized cutting plans and statistics
     """
     try:
-        logger.info(f"Received cutting optimization request for project {cutting_request.project_id}")
+        logger.info("Received cutting optimization request")
         
         # Convert request models to dictionaries
         plates_dict = [plate.model_dump() for plate in cutting_request.plates]
@@ -308,23 +304,7 @@ async def optimize_plates(
             optimization_details=optimization_details
         )
 
-        # Sync results to Supabase
-        sync_success = await sync_cutting_results(
-            uid=cutting_request.uid,
-            project_id=cutting_request.project_id,
-            cutting_plans=formatted_plans,  # 使用已经转换为字典的格式
-            plates=plates_dict,
-            orders=orders_dict,
-            others=others_dict
-        )
-
-        if not sync_success:
-            logger.warning(f"Failed to sync cutting results to Supabase for project {cutting_request.project_id}")
-            if not response.warnings:
-                response.warnings = []
-            response.warnings.append("Failed to sync results to database")
-
-        logger.info(f"Successfully generated {len(cutting_plans)} cutting plans for project {cutting_request.project_id}")
+        logger.info(f"Successfully generated {len(cutting_plans)} cutting plans")
         return response
 
     except Exception as e:
