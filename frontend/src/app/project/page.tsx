@@ -277,48 +277,50 @@ export default function ProjectPage() {
     const rowCount = Math.max(items.length, 5);
 
     return (
-      <div>
-        <h3 className="text-lg font-semibold mb-2">{title}</h3>
-        <table className="min-w-full border">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border p-2">编号</th>
-              <th className="border p-2">描述</th>
-              <th className="border p-2">长度</th>
-              <th className="border p-2">宽度</th>
-              {showQuantity && (
-                <th className="border p-2">数量</th>
-              )}
-              {showCustomer && (
-                <th className="border p-2">客户</th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: rowCount }).map((_, index) => {
-              const item = items[index];
-              return item ? (
-                <tr key={item.id} className="hover:bg-gray-50">
-                  <td className="border p-2">{index + 1}</td>
-                  <td className="border p-2">{item.description || '-'}</td>
-                  <td className="border p-2">{item.length}</td>
-                  <td className="border p-2">{item.width}</td>
-                  {showQuantity && <td className="border p-2">{item.quantity}</td>}
-                  {showCustomer && <td className="border p-2">{item.customer || ''}</td>}
-                </tr>
-              ) : (
-                <tr key={`empty-${index}`}>
-                  <td className="border p-2">{index + 1}</td>
-                  <td className="border p-2"></td>
-                  <td className="border p-2"></td>
-                  <td className="border p-2"></td>
-                  {showQuantity && <td className="border p-2"></td>}
-                  {showCustomer && <td className="border p-2"></td>}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="table-container">
+        <div className="table-title">{title}</div>
+        <div className="table-content">
+          <table className="min-w-full">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border p-2">编号</th>
+                <th className="border p-2">描述</th>
+                <th className="border p-2">长度</th>
+                <th className="border p-2">宽度</th>
+                {showQuantity && (
+                  <th className="border p-2">数量</th>
+                )}
+                {showCustomer && (
+                  <th className="border p-2">客户</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: rowCount }).map((_, index) => {
+                const item = items[index];
+                return item ? (
+                  <tr key={item.id} className="hover:bg-gray-50">
+                    <td className="border p-2">{index + 1}</td>
+                    <td className="border p-2">{item.description || '-'}</td>
+                    <td className="border p-2">{item.length}</td>
+                    <td className="border p-2">{item.width}</td>
+                    {showQuantity && <td className="border p-2">{item.quantity}</td>}
+                    {showCustomer && <td className="border p-2">{item.customer || ''}</td>}
+                  </tr>
+                ) : (
+                  <tr key={`empty-${index}`}>
+                    <td className="border p-2">{index + 1}</td>
+                    <td className="border p-2"></td>
+                    <td className="border p-2"></td>
+                    <td className="border p-2"></td>
+                    {showQuantity && <td className="border p-2"></td>}
+                    {showCustomer && <td className="border p-2"></td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   };
@@ -461,14 +463,12 @@ export default function ProjectPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto my-8 rounded-2xl shadow-2xl border bg-white flex flex-col h-[92vh]">
-      {/* 顶部栏 - 添加 flex justify-between */}
-      <div className="px-6 py-3 border-b bg-blue-50 flex justify-between items-center">
-        {/* 左侧项目名 */}
-        <div className="text-xl font-bold">
+    <div className="max-w-7xl mx-auto my-4 p-6 bg-white">
+      {/* 顶部栏 */}
+      <div className="flex justify-between items-center mb-6 pb-3 border-b">
+        <h1 className="text-xl font-bold">
           {selectedProject ? projects.find(p => p.id === selectedProject)?.name : '未选择项目'}
-        </div>
-        {/* 右侧退出按钮 */}
+        </h1>
         <button
           onClick={handleLogout}
           className="text-gray-600 hover:text-gray-800 px-4 py-2 rounded-lg flex items-center gap-2"
@@ -481,18 +481,16 @@ export default function ProjectPage() {
         </button>
       </div>
 
-      {/* 内容区 */}
-      <div className="flex-1 flex flex-col h-0 p-6">
-        {/* 上半部分：项目窗口 */}
-        <div className="flex-1 min-h-0">
-          <div className={`${windowClass} h-full`}>
-            <div className={windowTitleClass}>项目列表</div>
-            {/* 固定高度，最多显示10行，超出可滚动 */}
-            <div className="overflow-y-auto" style={{ maxHeight: '440px' }}>
+      {/* 项目列表 */}
+      <div className="mb-6">
+        <div className="table-container">
+          <div className="table-title">项目列表</div>
+          <div className="table-content">
+            <div className="overflow-y-auto" style={{ maxHeight: '400px' }}>
               <DragDropContext onDragEnd={handleDragEnd}>
                 <Droppable droppableId="projects">
                   {(provided) => (
-                    <table className="min-w-full border mb-2">
+                    <table className="min-w-full">
                       <thead>
                         <tr className="bg-gray-100">
                           <th className="border p-2 group relative">
@@ -639,8 +637,9 @@ export default function ProjectPage() {
                 </Droppable>
               </DragDropContext>
             </div>
-            {/* 功能键区域 */}
-            <div className="p-2 border-t flex justify-end gap-2">
+          </div>
+          <div className="table-actions">
+            <div className="flex justify-end gap-2">
               {selectedProject && (
                 <button
                   className="bg-blue-500 text-white px-3 py-1 rounded"
@@ -660,62 +659,55 @@ export default function ProjectPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <span>创建中...</span>
+                    创建中...
                   </>
                 ) : (
-                  '新增'
-                )}
-              </button>
-              <button 
-                className={`${isDeleting ? 'bg-red-400' : 'bg-red-500'} text-white px-3 py-1 rounded flex items-center gap-2 ${isDeleting ? 'cursor-not-allowed' : 'hover:bg-red-600'} ${selectedProjects.size === 0 ? 'opacity-50' : ''}`}
-                onClick={handleDeleteProjects}
-                disabled={isDeleting || selectedProjects.size === 0}
-              >
-                {isDeleting ? (
                   <>
-                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
-                    <span>删除中...</span>
-                  </>
-                ) : (
-                  <>
-                    {selectedProjects.size > 0 ? `删除 (${selectedProjects.size})` : '删除'}
+                    新建项目
                   </>
                 )}
               </button>
-            </div>
-          </div>
-        </div>
-
-        {/* 下半部分：三栏窗口 */}
-        <div className="flex-1 min-h-0">
-          <div className="h-full grid grid-cols-3 gap-4">
-            {/* 板件信息 */}
-            <div className={windowClass}>
-              <div className={windowTitleClass}>板件信息</div>
-              <div className="flex-1 overflow-auto">
-                {renderTable(parts, '', true)}
-              </div>
-            </div>
-            {/* 零件信息 */}
-            <div className={windowClass}>
-              <div className={windowTitleClass}>零件信息</div>
-              <div className="flex-1 overflow-auto">
-                {renderTable(components, '', true)}
-              </div>
-            </div>
-            {/* 常用尺寸信息 */}
-            <div className={windowClass}>
-              <div className={windowTitleClass}>常用尺寸信息</div>
-              <div className="flex-1 overflow-auto">
-                {renderTable(dimensions, '', false, true)}
-              </div>
+              {selectedProjects.size > 0 && (
+                <button
+                  className="bg-red-500 text-white px-3 py-1 rounded"
+                  onClick={handleDeleteProjects}
+                >
+                  删除选中
+                </button>
+              )}
+              {selectedProject && (
+                <button
+                  className="bg-purple-500 text-white px-3 py-1 rounded"
+                  onClick={handleLayout}
+                >
+                  切板统计
+                </button>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* 项目详情表格 */}
+      {selectedProject && (
+        <div className="grid grid-cols-3 gap-6">
+          <div>
+            <h3 className="text-lg font-semibold mb-3">板件信息</h3>
+            {renderTable(parts, '', true)}
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold mb-3">零件信息</h3>
+            {renderTable(components, '', true)}
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold mb-3">常用尺寸信息</h3>
+            {renderTable(dimensions, '', false, true)}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

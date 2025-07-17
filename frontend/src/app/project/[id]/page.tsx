@@ -501,465 +501,471 @@ export default function ProjectDetailPage() {
   const editableCellClass = "border p-2 focus:outline-none focus:bg-blue-50 bg-gray-50";
 
   return (
-    <div className="relative max-w-7xl mx-auto my-8 rounded-2xl shadow-2xl border bg-white flex flex-col h-[92vh]">
+    <div className="max-w-7xl mx-auto my-4 p-6 bg-white">
       <UnsavedChangesPrompt hasChanges={hasChanges} onSave={handleSave} />
-      <div className="flex items-center px-6 pt-4">
-        <div className="flex gap-2 mb-4">
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold">
-            项目
-          </button>
-          <button 
-            className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold"
-            onClick={handleLayoutClick}
-          >
-            排版
-          </button>
-        </div>
+      
+      {/* 导航按钮 */}
+      <div className="flex gap-2 mb-4">
+        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold">
+          项目
+        </button>
+        <button 
+          className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold"
+          onClick={handleLayoutClick}
+        >
+          排版
+        </button>
       </div>
       
-      <div className="px-6 pb-2 border-b">
+      {/* 标题和操作按钮 */}
+      <div className="flex justify-between items-center mb-6 pb-3 border-b">
         <h1 className="text-xl font-bold">
           {projectName || '未命名项目'}
         </h1>
+        <div className="flex gap-2 items-center">
+          <div className="flex items-center gap-2 mr-4">
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                name="optimization"
+                value="1"
+                checked={optimization === 1}
+                onChange={() => setOptimization(1)}
+                className="form-radio"
+              />
+              <span>优化</span>
+            </label>
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                name="optimization"
+                value="0"
+                checked={optimization === 0}
+                onChange={() => setOptimization(0)}
+                className="form-radio"
+              />
+              <span>正常</span>
+            </label>
+          </div>
+          <button 
+            className={`bg-yellow-500 text-white px-3 py-1 rounded ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            onClick={handleCutting}
+            disabled={isLoading}
+          >
+            {isLoading ? '切板中...' : '切板'}
+          </button>
+          <button className="bg-green-500 text-white px-3 py-1 rounded" onClick={handleSave}>保存</button>
+          <button className="bg-gray-500 text-white px-3 py-1 rounded" onClick={handleBack}>返回</button>
+        </div>
       </div>
 
-      <div className="absolute top-4 right-4 flex gap-2 items-center">
-        <div className="flex items-center gap-2 mr-4">
-          <label className="flex items-center gap-1">
-            <input
-              type="radio"
-              name="optimization"
-              value="1"
-              checked={optimization === 1}
-              onChange={() => setOptimization(1)}
-              className="form-radio"
-            />
-            <span>优化</span>
-          </label>
-          <label className="flex items-center gap-1">
-            <input
-              type="radio"
-              name="optimization"
-              value="0"
-              checked={optimization === 0}
-              onChange={() => setOptimization(0)}
-              className="form-radio"
-            />
-            <span>正常</span>
-          </label>
+      {/* 项目基本信息 */}
+      <div className="mb-6">
+        <div className="table-container">
+          <div className="table-title">项目基本信息</div>
+          <div className="table-content">
+            <table className="min-w-full">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border p-2">名称</th>
+                  <th className="border p-2">详情</th>
+                  <th className="border p-2">描述</th>
+                  <th className="border p-2">锯片宽度</th>
+                  <th className="border p-2">修改时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="hover:bg-gray-50">
+                  <td 
+                    className={editableCellClass}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => setProjectName(e.currentTarget.textContent || '')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                  >
+                    {projectName}
+                  </td>
+                  <td 
+                    className={editableCellClass}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => setProjectDetails(e.currentTarget.textContent || '')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                  >
+                    {projectDetails}
+                  </td>
+                  <td 
+                    className={editableCellClass}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => setProjectDescription(e.currentTarget.textContent || '')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                  >
+                    {projectDescription}
+                  </td>
+                  <td 
+                    className={editableCellClass}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const value = e.currentTarget.textContent || '0';
+                      if (validateNumber(value)) {
+                        setSawBlade(parseInt(value));
+                      } else {
+                        alert('锯片宽度必须为正整数');
+                        e.currentTarget.textContent = sawBlade.toString();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                  >
+                    {sawBlade}
+                  </td>
+                  <td className="border p-2">
+                    {new Date(project.updated_at).toLocaleString()}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <button 
-          className={`bg-yellow-500 text-white px-3 py-1 rounded ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          onClick={handleCutting}
-          disabled={isLoading}
-        >
-          {isLoading ? '切板中...' : '切板'}
-        </button>
-        <button className="bg-green-500 text-white px-3 py-1 rounded" onClick={handleSave}>保存</button>
-        <button className="bg-gray-500 text-white px-3 py-1 rounded" onClick={handleBack}>返回</button>
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col p-6">
-        <div className={`${windowClass} mb-4`}>
-          <div className={windowTitleClass}>项目列表</div>
-          <table className="min-w-full">
-            <thead>
-              <tr>
-                <th className="border p-2">名称</th>
-                <th className="border p-2">详情</th>
-                <th className="border p-2">描述</th>
-                <th className="border p-2">锯片宽度</th>
-                <th className="border p-2">修改时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="hover:bg-gray-50">
-                <td 
-                  className={editableCellClass}
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => setProjectName(e.currentTarget.textContent || '')}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                >
-                  {projectName}
-                </td>
-                <td 
-                  className={editableCellClass}
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => setProjectDetails(e.currentTarget.textContent || '')}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                >
-                  {projectDetails}
-                </td>
-                <td 
-                  className={editableCellClass}
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => setProjectDescription(e.currentTarget.textContent || '')}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                >
-                  {projectDescription}
-                </td>
-                <td 
-                  className={editableCellClass}
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => {
-                    const value = e.currentTarget.textContent || '0';
-                    if (validateNumber(value)) {
-                      setSawBlade(parseInt(value));
-                    } else {
-                      alert('锯片宽度必须为正整数');
-                      e.currentTarget.textContent = sawBlade.toString();
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                >
-                  {sawBlade}
-                </td>
-                <td className="border p-2">
-                  {new Date(project.updated_at).toLocaleString()}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      {/* 数据表格 */}
+      <div className="grid grid-cols-3 gap-6">
+        {/* 板件信息 */}
+        <div className="table-container">
+          <div className="table-title">板件信息</div>
+          <div className="table-content">
+            <table className="min-w-full">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border p-2">编号</th>
+                  <th className="border p-2">长度</th>
+                  <th className="border p-2">宽度</th>
+                  <th className="border p-2">数量</th>
+                  <th className="border p-2">描述</th>
+                  <th className="border p-2">操作</th>
+                </tr>
+              </thead>
+              <tbody onKeyDown={handleKeyDown}>
+                {plates.map((plate, index) => (
+                  <tr 
+                    key={index} 
+                    className="hover:bg-gray-50"
+                    onClick={(e) => handleRowClick('plates', index, e)}
+                    data-row={`plates-${index}`}
+                  >
+                    <td className="border p-2">{index + 1}</td>
+                    <td 
+                      className={editableCellClass}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const value = e.currentTarget.textContent || '0';
+                        if (validateNumber(value)) {
+                          handleCellChange('plates', index, 'length', parseInt(value));
+                        } else {
+                          alert('长度必须为正整数');
+                          e.currentTarget.textContent = plate.length.toString();
+                        }
+                      }}
+                    >
+                      {plate.length}
+                    </td>
+                    <td 
+                      className={editableCellClass}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const value = e.currentTarget.textContent || '0';
+                        if (validateNumber(value)) {
+                          handleCellChange('plates', index, 'width', parseInt(value));
+                        } else {
+                          alert('宽度必须为正整数');
+                          e.currentTarget.textContent = plate.width.toString();
+                        }
+                      }}
+                    >
+                      {plate.width}
+                    </td>
+                    <td 
+                      className={editableCellClass}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const value = e.currentTarget.textContent || '1';
+                        if (validateNumber(value)) {
+                          handleCellChange('plates', index, 'quantity', parseInt(value));
+                        } else {
+                          alert('数量必须为正整数');
+                          e.currentTarget.textContent = plate.quantity.toString();
+                        }
+                      }}
+                    >
+                      {plate.quantity}
+                    </td>
+                    <td 
+                      className={editableCellClass}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => handleCellChange('plates', index, 'description', e.currentTarget.textContent || '')}
+                    >
+                      {plate.description}
+                    </td>
+                    <td className="border p-2">
+                      <button
+                        onClick={() => deleteRow('plates', index)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        删除
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="table-actions">
+            <button onClick={() => addNewRow('plates')} className="bg-blue-500 text-white px-3 py-1 rounded">
+              添加
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 grid grid-cols-3 gap-4">
-          <div className={windowClass}>
-            <div className={windowTitleClass}>板件信息</div>
-            <div className="flex-1 overflow-auto p-4">
-              <table className="min-w-full">
-                <thead>
-                  <tr>
-                    <th className="border p-2">编号</th>
-                    <th className="border p-2">长度</th>
-                    <th className="border p-2">宽度</th>
-                    <th className="border p-2">数量</th>
-                    <th className="border p-2">描述</th>
-                    <th className="border p-2">操作</th>
-                  </tr>
-                </thead>
-                <tbody onKeyDown={handleKeyDown}>
-                  {plates.map((plate, index) => (
-                    <tr 
-                      key={index} 
-                      className="hover:bg-gray-50"
-                      onClick={(e) => handleRowClick('plates', index, e)}
-                      data-row={`plates-${index}`}
+        {/* 零件信息 */}
+        <div className="table-container">
+          <div className="table-title">零件信息</div>
+          <div className="table-content">
+            <table className="min-w-full">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border p-2">编号</th>
+                  <th className="border p-2">长度</th>
+                  <th className="border p-2">宽度</th>
+                  <th className="border p-2">数量</th>
+                  <th className="border p-2">描述</th>
+                  <th className="border p-2">操作</th>
+                </tr>
+              </thead>
+              <tbody onKeyDown={handleKeyDown}>
+                {orders.map((order, index) => (
+                  <tr 
+                    key={index} 
+                    className="hover:bg-gray-50"
+                    onClick={(e) => handleRowClick('orders', index, e)}
+                    data-row={`orders-${index}`}
+                  >
+                    <td className="border p-2">{index + 1}</td>
+                    <td 
+                      className={editableCellClass}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const value = e.currentTarget.textContent || '0';
+                        if (validateNumber(value)) {
+                          handleCellChange('orders', index, 'length', parseInt(value));
+                        } else {
+                          alert('长度必须为正整数');
+                          e.currentTarget.textContent = order.length.toString();
+                        }
+                      }}
                     >
-                      <td className="border p-2">{index + 1}</td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          const value = e.currentTarget.textContent || '0';
-                          if (validateNumber(value)) {
-                            handleCellChange('plates', index, 'length', parseInt(value));
-                          } else {
-                            alert('长度必须为正整数');
-                            e.currentTarget.textContent = plate.length.toString();
-                          }
-                        }}
-                      >
-                        {plate.length}
-                      </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          const value = e.currentTarget.textContent || '0';
-                          if (validateNumber(value)) {
-                            handleCellChange('plates', index, 'width', parseInt(value));
-                          } else {
-                            alert('宽度必须为正整数');
-                            e.currentTarget.textContent = plate.width.toString();
-                          }
-                        }}
-                      >
-                        {plate.width}
-                      </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          const value = e.currentTarget.textContent || '1';
-                          if (validateNumber(value)) {
-                            handleCellChange('plates', index, 'quantity', parseInt(value));
-                          } else {
-                            alert('数量必须为正整数');
-                            e.currentTarget.textContent = plate.quantity.toString();
-                          }
-                        }}
-                      >
-                        {plate.quantity}
-                      </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => handleCellChange('plates', index, 'description', e.currentTarget.textContent || '')}
-                      >
-                        {plate.description}
-                      </td>
-                      <td className="border p-2">
-                        <button
-                          onClick={() => deleteRow('plates', index)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          删除
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <button onClick={() => addNewRow('plates')} className="mt-2 bg-blue-500 text-white px-3 py-1 rounded">
-                添加
-              </button>
-            </div>
-          </div>
-
-          <div className={windowClass}>
-            <div className={windowTitleClass}>零件信息</div>
-            <div className="flex-1 overflow-auto p-4">
-              <table className="min-w-full">
-                <thead>
-                  <tr>
-                    <th className="border p-2">编号</th>
-                    <th className="border p-2">长度</th>
-                    <th className="border p-2">宽度</th>
-                    <th className="border p-2">数量</th>
-                    <th className="border p-2">描述</th>
-                    <th className="border p-2">操作</th>
-                  </tr>
-                </thead>
-                <tbody onKeyDown={handleKeyDown}>
-                  {orders.map((order, index) => (
-                    <tr 
-                      key={index} 
-                      className="hover:bg-gray-50"
-                      onClick={(e) => handleRowClick('orders', index, e)}
-                      data-row={`orders-${index}`}
+                      {order.length}
+                    </td>
+                    <td 
+                      className={editableCellClass}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const value = e.currentTarget.textContent || '0';
+                        if (validateNumber(value)) {
+                          handleCellChange('orders', index, 'width', parseInt(value));
+                        } else {
+                          alert('宽度必须为正整数');
+                          e.currentTarget.textContent = order.width.toString();
+                        }
+                      }}
                     >
-                      <td className="border p-2">{index + 1}</td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          const value = e.currentTarget.textContent || '0';
-                          if (validateNumber(value)) {
-                            handleCellChange('orders', index, 'length', parseInt(value));
-                          } else {
-                            alert('长度必须为正整数');
-                            e.currentTarget.textContent = order.length.toString();
-                          }
-                        }}
+                      {order.width}
+                    </td>
+                    <td 
+                      className={editableCellClass}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const value = e.currentTarget.textContent || '1';
+                        if (validateNumber(value)) {
+                          handleCellChange('orders', index, 'quantity', parseInt(value));
+                        } else {
+                          alert('数量必须为正整数');
+                          e.currentTarget.textContent = order.quantity.toString();
+                        }
+                      }}
+                    >
+                      {order.quantity}
+                    </td>
+                    <td 
+                      className={editableCellClass}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => handleCellChange('orders', index, 'description', e.currentTarget.textContent || '')}
+                    >
+                      {order.description}
+                    </td>
+                    <td className="border p-2">
+                      <button
+                        onClick={() => deleteRow('orders', index)}
+                        className="text-red-500 hover:text-red-700"
                       >
-                        {order.length}
-                      </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          const value = e.currentTarget.textContent || '0';
-                          if (validateNumber(value)) {
-                            handleCellChange('orders', index, 'width', parseInt(value));
-                          } else {
-                            alert('宽度必须为正整数');
-                            e.currentTarget.textContent = order.width.toString();
-                          }
-                        }}
-                      >
-                        {order.width}
-                      </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          const value = e.currentTarget.textContent || '1';
-                          if (validateNumber(value)) {
-                            handleCellChange('orders', index, 'quantity', parseInt(value));
-                          } else {
-                            alert('数量必须为正整数');
-                            e.currentTarget.textContent = order.quantity.toString();
-                          }
-                        }}
-                      >
-                        {order.quantity}
-                      </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => handleCellChange('orders', index, 'description', e.currentTarget.textContent || '')}
-                      >
-                        {order.description}
-                      </td>
-                      <td className="border p-2">
-                        <button
-                          onClick={() => deleteRow('orders', index)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          删除
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <button onClick={() => addNewRow('orders')} className="mt-2 bg-blue-500 text-white px-3 py-1 rounded">
-                添加
-              </button>
-            </div>
-          </div>
-
-          <div className={windowClass}>
-            <div className={windowTitleClass}>常用尺寸信息</div>
-            <div className="flex-1 overflow-auto p-4">
-              <table className="min-w-full">
-                <thead>
-                  <tr>
-                    <th className="border p-2">
-                      <div className="flex items-center gap-1" title="可拖拽排序">
-                        <span>编号</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                        </svg>
-                      </div>
-                    </th>
-                    <th className="border p-2">长度</th>
-                    <th className="border p-2">宽度</th>
-                    <th className="border p-2">客户</th>
-                    <th className="border p-2">描述</th>
-                    <th className="border p-2">操作</th>
+                        删除
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <DragDropContext onDragEnd={handleOthersDragEnd}>
-                  <Droppable droppableId="others">
-                    {(provided) => (
-                      <tbody 
-                        {...provided.droppableProps} 
-                        ref={provided.innerRef}
-                        onKeyDown={handleKeyDown}
-                      >
-                  {others.map((other, index) => (
-                          <Draggable 
-                            key={other.id} 
-                            draggableId={`other-${other.id}`} 
-                            index={index}
-                          >
-                            {(provided) => (
-                              <tr
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                      className="hover:bg-gray-50"
-                      onClick={(e) => handleRowClick('others', index, e)}
-                                data-row={`others-${index}`}
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="table-actions">
+            <button onClick={() => addNewRow('orders')} className="bg-blue-500 text-white px-3 py-1 rounded">
+              添加
+            </button>
+          </div>
+        </div>
+
+        {/* 常用尺寸信息 */}
+        <div className="table-container">
+          <div className="table-title">常用尺寸信息</div>
+          <div className="table-content">
+            <DragDropContext onDragEnd={handleOthersDragEnd}>
+              <Droppable droppableId="others">
+                {(provided) => (
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        <th className="border p-2">
+                          <div className="flex items-center gap-1" title="可拖拽排序">
+                            <span>编号</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                            </svg>
+                          </div>
+                        </th>
+                        <th className="border p-2">长度</th>
+                        <th className="border p-2">宽度</th>
+                        <th className="border p-2">客户</th>
+                        <th className="border p-2">描述</th>
+                        <th className="border p-2">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody {...provided.droppableProps} ref={provided.innerRef} onKeyDown={handleKeyDown}>
+                      {others.map((other, index) => (
+                        <Draggable key={index} draggableId={`other-${index}`} index={index}>
+                          {(provided) => (
+                            <tr
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              className="hover:bg-gray-50"
+                              onClick={(e) => handleRowClick('others', index, e)}
+                              data-row={`others-${index}`}
+                            >
+                              <td 
+                                className="border p-2 cursor-move bg-gray-50 hover:bg-gray-100"
+                                {...provided.dragHandleProps}
+                                title="拖动排序"
                               >
-                                <td
-                                  className="border p-2 cursor-move bg-gray-50 hover:bg-gray-100"
-                                  {...provided.dragHandleProps}
-                    >
-                                  {index + 1}
-                                </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          const value = e.currentTarget.textContent || '0';
-                          if (validateNumber(value)) {
-                            handleCellChange('others', index, 'length', parseInt(value));
-                          } else {
-                            alert('长度必须为正整数');
-                            e.currentTarget.textContent = other.length.toString();
-                          }
-                        }}
-                      >
-                        {other.length}
-                      </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          const value = e.currentTarget.textContent || '0';
-                          if (validateNumber(value)) {
-                            handleCellChange('others', index, 'width', parseInt(value));
-                          } else {
-                            alert('宽度必须为正整数');
-                            e.currentTarget.textContent = other.width.toString();
-                          }
-                        }}
-                      >
-                        {other.width}
-                      </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => handleCellChange('others', index, 'client', e.currentTarget.textContent || '')}
-                      >
-                        {other.client}
-                      </td>
-                      <td 
-                        className={editableCellClass}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => handleCellChange('others', index, 'description', e.currentTarget.textContent || '')}
-                      >
-                        {other.description}
-                      </td>
-                      <td className="border p-2">
-                        <button
-                          onClick={() => deleteRow('others', index)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          删除
-                        </button>
-                      </td>
-                    </tr>
-                            )}
-                          </Draggable>
-                  ))}
-                        {provided.placeholder}
-                </tbody>
-                    )}
-                  </Droppable>
-                </DragDropContext>
-              </table>
-              <button onClick={() => addNewRow('others')} className="mt-2 bg-blue-500 text-white px-3 py-1 rounded">
-                添加
-              </button>
-            </div>
+                                {index + 1}
+                              </td>
+                              <td 
+                                className={editableCellClass}
+                                contentEditable
+                                suppressContentEditableWarning
+                                onBlur={(e) => {
+                                  const value = e.currentTarget.textContent || '0';
+                                  if (validateNumber(value)) {
+                                    handleCellChange('others', index, 'length', parseInt(value));
+                                  } else {
+                                    alert('长度必须为正整数');
+                                    e.currentTarget.textContent = other.length.toString();
+                                  }
+                                }}
+                              >
+                                {other.length}
+                              </td>
+                              <td 
+                                className={editableCellClass}
+                                contentEditable
+                                suppressContentEditableWarning
+                                onBlur={(e) => {
+                                  const value = e.currentTarget.textContent || '0';
+                                  if (validateNumber(value)) {
+                                    handleCellChange('others', index, 'width', parseInt(value));
+                                  } else {
+                                    alert('宽度必须为正整数');
+                                    e.currentTarget.textContent = other.width.toString();
+                                  }
+                                }}
+                              >
+                                {other.width}
+                              </td>
+                              <td 
+                                className={editableCellClass}
+                                contentEditable
+                                suppressContentEditableWarning
+                                onBlur={(e) => handleCellChange('others', index, 'client', e.currentTarget.textContent || '')}
+                              >
+                                {other.client}
+                              </td>
+                              <td 
+                                className={editableCellClass}
+                                contentEditable
+                                suppressContentEditableWarning
+                                onBlur={(e) => handleCellChange('others', index, 'description', e.currentTarget.textContent || '')}
+                              >
+                                {other.description}
+                              </td>
+                              <td className="border p-2">
+                                <button
+                                  onClick={() => deleteRow('others', index)}
+                                  className="text-red-500 hover:text-red-700"
+                                >
+                                  删除
+                                </button>
+                              </td>
+                            </tr>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                    </tbody>
+                  </table>
+                )}
+              </Droppable>
+            </DragDropContext>
+          </div>
+          <div className="table-actions">
+            <button onClick={() => addNewRow('others')} className="bg-blue-500 text-white px-3 py-1 rounded">
+              添加
+            </button>
           </div>
         </div>
       </div>

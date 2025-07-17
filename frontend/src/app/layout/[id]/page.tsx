@@ -249,10 +249,10 @@ export default function LayoutStatsPage() {
             {/* 详细统计表格 */}
             <div className="space-y-6">
               {/* 零件统计表格 */}
-              <div>
-                <h3 className="text-md font-semibold mb-2">零件统计</h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full border">
+              <div className="table-container">
+                <div className="table-title">零件统计</div>
+                <div className="table-content">
+                  <table className="min-w-full">
                     <thead>
                       <tr className="bg-blue-50">
                         <th className="border p-2">编号</th>
@@ -276,10 +276,10 @@ export default function LayoutStatsPage() {
               </div>
 
               {/* 常用尺寸统计表格 */}
-              <div>
-                <h3 className="text-md font-semibold mb-2">常用尺寸统计</h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full border">
+              <div className="table-container">
+                <div className="table-title">常用尺寸统计</div>
+                <div className="table-content">
+                  <table className="min-w-full">
                     <thead>
                       <tr className="bg-yellow-50">
                         <th className="border p-2">编号</th>

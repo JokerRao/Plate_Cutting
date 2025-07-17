@@ -24,3 +24,155 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* 增强表格样式 */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  border: 2px solid #374151;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 表格边框样式 - 应用到所有使用border类的元素 */
+.border {
+  border: 2px solid #374151 !important;
+}
+
+/* 表格头部和单元格样式 */
+table th.border,
+table td.border {
+  border: 2px solid #374151 !important;
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+/* 表格头部样式 */
+table th.border {
+  background-color: #f3f4f6;
+  font-weight: 600;
+  color: #111827;
+  border-bottom: 3px solid #374151 !important;
+}
+
+/* 表格行悬停效果 */
+table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+/* 增强文字对比度 */
+table td.border {
+  color: #1f2937;
+  font-weight: 500;
+}
+
+/* 表格中的数字和文本 */
+table td.border:not(:first-child) {
+  text-align: center;
+  font-weight: 600;
+  color: #111827;
+}
+
+/* 增强按钮文字对比度 */
+button {
+  font-weight: 500;
+}
+
+/* 增强输入框文字对比度 */
+input, textarea {
+  color: #111827;
+  font-weight: 500;
+}
+
+/* 增强标题文字对比度 */
+h1, h2, h3, h4, h5, h6 {
+  color: #111827;
+  font-weight: 600;
+}
+
+/* 增强链接文字对比度 */
+a {
+  color: #2563eb;
+  font-weight: 500;
+}
+
+/* 增强标签文字对比度 */
+label {
+  color: #374151;
+  font-weight: 500;
+}
+
+/* 增强描述文字对比度 */
+.text-gray-600 {
+  color: #4b5563 !important;
+  font-weight: 500;
+}
+
+/* 增强小文字对比度 */
+.text-xs {
+  color: #6b7280 !important;
+  font-weight: 500;
+}
+
+/* 增强表格整体样式 */
+table.min-w-full {
+  border: 2px solid #374151;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 增强表格头部背景 */
+table thead tr {
+  background-color: #f3f4f6;
+}
+
+/* 增强表格行交替颜色 */
+table tbody tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+/* 增强表格行悬停效果 */
+table tbody tr:hover {
+  background-color: #f0f9ff;
+}
+
+/* 增强表格文字在深色背景上的对比度 */
+.bg-blue-50, .bg-yellow-50, .bg-gray-50 {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+/* 表格外框容器样式 */
+.table-container {
+  border: 2px solid #374151;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: white;
+}
+
+/* 表格标题样式 */
+.table-title {
+  background-color: #f3f4f6;
+  padding: 12px 16px;
+  border-bottom: 2px solid #374151;
+  font-weight: 600;
+  color: #111827;
+  font-size: 1.125rem;
+}
+
+/* 表格内容区域 */
+.table-content {
+  padding: 0;
+}
+
+/* 表格底部操作区域 */
+.table-actions {
+  padding: 12px 16px;
+  border-top: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+}

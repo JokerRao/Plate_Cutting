@@ -289,34 +289,36 @@ export default function LayoutPage() {
     if (filteredData.length === 0) return null;
 
     return (
-      <div className="flex-1">
-        <h3 className="font-semibold mb-2">{title}</h3>
-        <table className="w-full border">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="border p-2">编号</th>
-              <th className="border p-2">长度</th>
-              <th className="border p-2">宽度</th>
-              <th className="border p-2">总数量</th>
-              <th className="border p-2">本页数量</th>
-              {type === 'others' && <th className="border p-2">客户</th>}
-              <th className="border p-2">描述</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredData.map((item) => (
-              <tr key={item.id} className={type === 'orders' ? 'bg-blue-200' : 'bg-yellow-200'}>
-                <td className="border p-2">{type === 'others' ? `R${item.id}` : item.id}</td>
-                <td className="border p-2">{item.length}</td>
-                <td className="border p-2">{item.width}</td>
-                <td className="border p-2">{type === 'others' ? totalUsageCount.get(String(item.id)) || 0 : item.quantity}</td>
-                <td className="border p-2">{pageUsageCount.get(String(item.id)) || 0}</td>
-                {type === 'others' && <td className="border p-2">{item.client}</td>}
-                <td className="border p-2">{item.description}</td>
+      <div className="table-container">
+        <div className="table-title">{title}</div>
+        <div className="table-content">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="border p-2">编号</th>
+                <th className="border p-2">长度</th>
+                <th className="border p-2">宽度</th>
+                <th className="border p-2">总数量</th>
+                <th className="border p-2">本页数量</th>
+                {type === 'others' && <th className="border p-2">客户</th>}
+                <th className="border p-2">描述</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredData.map((item) => (
+                <tr key={item.id} className={type === 'orders' ? 'bg-blue-200' : 'bg-yellow-200'}>
+                  <td className="border p-2">{type === 'others' ? `R${item.id}` : item.id}</td>
+                  <td className="border p-2">{item.length}</td>
+                  <td className="border p-2">{item.width}</td>
+                  <td className="border p-2">{type === 'others' ? totalUsageCount.get(String(item.id)) || 0 : item.quantity}</td>
+                  <td className="border p-2">{pageUsageCount.get(String(item.id)) || 0}</td>
+                  {type === 'others' && <td className="border p-2">{item.client}</td>}
+                  <td className="border p-2">{item.description}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   };
@@ -328,97 +330,87 @@ export default function LayoutPage() {
   );
 
   return (
-    <div className="relative max-w-7xl mx-auto my-8 rounded-2xl shadow-2xl border bg-white flex flex-col h-[92vh]">
+    <div className="max-w-7xl mx-auto my-4 p-6 bg-white">
       {/* 通知组件 */}
       {notification && (
-        <div className="absolute top-0 left-0 right-0 z-50 animate-fade-out">
-          <div className="mx-auto max-w-md px-4 py-2 bg-yellow-100 border-l-4 border-yellow-500 rounded-b">
+        <div className="mb-4 animate-fade-out">
+          <div className="px-4 py-2 bg-yellow-100 border-l-4 border-yellow-500 rounded">
             <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-yellow-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-yellow-700">
-                  {notification.message}
-                </p>
-              </div>
+              <svg className="h-5 w-5 text-yellow-500 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <p className="text-sm text-yellow-700">{notification.message}</p>
             </div>
           </div>
         </div>
       )}
-      {/* 导航和标题部分保持不变 */}
-      <div className="flex items-center px-6 pt-1">
-        <div className="flex gap-2 mb-2">
-          <button 
-            className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold"
-            onClick={() => router.push(`/project/${projectId}`)}
+
+      {/* 导航按钮 */}
+      <div className="flex gap-2 mb-4">
+        <button 
+          className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold"
+          onClick={() => router.push(`/project/${projectId}`)}
+        >
+          项目
+        </button>
+        <button 
+          className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold"
+          onClick={() => router.push(`/layout/${projectId}`)}
+        >
+          切板统计
+        </button>
+      </div>
+
+      {/* 标题和分页 */}
+      <div className="flex items-center justify-between mb-4 pb-2 border-b">
+        <h1 className="text-xl font-bold">
+          {projectName || '未命名项目'} - 第 {pageNum} 页
+        </h1>
+        <div className="flex gap-2">
+          <button
+            className={`px-4 py-2 rounded text-sm transition-all duration-200 ${
+              pageNum > 1
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            } ${isTransitioning ? 'opacity-50 cursor-not-allowed' : ''}`}
+            onClick={() => handlePageChange(pageNum - 1)}
+            disabled={pageNum <= 1 || isTransitioning}
           >
-            项目
+            {isTransitioning ? '加载中...' : '上一页'}
           </button>
-          <button 
-            className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold"
-            onClick={() => router.push(`/layout/${projectId}`)}
+          <button
+            className={`px-4 py-2 rounded text-sm transition-all duration-200 ${
+              pageNum < totalPages
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            } ${isTransitioning ? 'opacity-50 cursor-not-allowed' : ''}`}
+            onClick={() => handlePageChange(pageNum + 1)}
+            disabled={pageNum >= totalPages || isTransitioning}
           >
-            切板统计
+            {isTransitioning ? '加载中...' : '下一页'}
           </button>
         </div>
       </div>
+      
+      <p className="text-sm text-gray-600 mb-4">
+        使用率: {(layoutData?.rate * 100).toFixed(1)}%
+      </p>
 
-      <div className="px-6 border-b">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-bold">
-            {projectName || '未命名项目'} - 第 {pageNum} 页
-          </h1>
-          <div className="flex gap-2">
-            <button
-              className={`px-4 py-1 rounded text-sm transition-all duration-200 ${
-                pageNum > 1
-                  ? 'bg-blue-500 text-white hover:bg-blue-600'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              } ${isTransitioning ? 'opacity-50 cursor-not-allowed' : ''}`}
-              onClick={() => handlePageChange(pageNum - 1)}
-              disabled={pageNum <= 1 || isTransitioning}
-            >
-              {isTransitioning ? '加载中...' : '上一页'}
-            </button>
-            <button
-              className={`px-4 py-1 rounded text-sm transition-all duration-200 ${
-                pageNum < totalPages
-                  ? 'bg-blue-500 text-white hover:bg-blue-600'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              } ${isTransitioning ? 'opacity-50 cursor-not-allowed' : ''}`}
-              onClick={() => handlePageChange(pageNum + 1)}
-              disabled={pageNum >= totalPages || isTransitioning}
-            >
-              {isTransitioning ? '加载中...' : '下一页'}
-            </button>
-          </div>
+      {/* 画布区域 */}
+      <div className="flex justify-center mb-6">
+        <div className={`transition-opacity duration-300 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}>
+          <canvas
+            ref={canvasRef}
+            className="border border-gray-300 rounded"
+            style={{ maxWidth: '100%', height: 'auto' }}
+          />
         </div>
-        <p className="text-xs text-gray-600 -mt-1">
-          使用率: {(layoutData?.rate * 100).toFixed(1)}%
-        </p>
       </div>
 
-      {/* 内容区：上方画布，下方表格 */}
-      <div className="flex-1 px-6 pt-1 pb-4 flex flex-col">
-        {/* 上方画布 */}
-        <div className="flex-1 flex justify-center items-start mb-4">
-          <div className={`transition-opacity duration-300 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}>
-            <canvas
-              ref={canvasRef}
-              className="rounded-lg border border-gray-200"
-              style={{ maxWidth: '100%', height: 'auto' }}
-            />
-          </div>
-        </div>
-
-        {/* 下方表格 */}
-        <div className="flex gap-4 h-56">
-          {renderTable('零件信息', orders, 'orders')}
-          {renderTable('常用尺寸信息', others, 'others')}
-        </div>
+      {/* 表格区域 */}
+      <div className="grid grid-cols-2 gap-6">
+        {renderTable('零件信息', orders, 'orders')}
+        {renderTable('常用尺寸信息', others, 'others')}
       </div>
     </div>
   );
