@@ -2,9 +2,9 @@ import copy
 from collections import Counter
 import logging
 
-# 配置日志系统
+# 配置日志系统 (建议在生产环境使用 INFO 级别)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('plate_cutting')
@@ -12,60 +12,38 @@ logger = logging.getLogger('plate_cutting')
 # 定义一个板材类来表示大板
 class Plate:
     def __init__(self, length, width, blade_thick=4):
-        self.length = length  # 板材长度
-        self.width = width    # 板材宽度
-        self.used_area = 0    # 已使用面积
-        self.cuts = []        # 存储切割信息,格式为(小板尺寸,起点x,起点y,终点x,终点y)
-        self.current_x = 0    # 当前切割位置的x坐标
-        self.current_y = 0    # 当前切割位置的y坐标
-        self.row_width = 0    # 当前行的宽度
-        self.current_x1 = 0   # 缝隙切割时的x坐标
-        self.current_y1 = 0   # 缝隙切割时的y坐标
-        self.row_width1 = 0   # 缝隙切割时的行宽
-        self.available_gaps = [] # 可用缝隙列表,格式为(起点x,起点y,终点x,终点y)
-        self.used_perc = 0    # 利用率
+        self.length = length
+        self.width = width
+        self.used_area = 0
+        self.cuts = []
+        self.current_x = 0
+        self.current_y = 0
+        self.row_width = 0
+        self.available_gaps = []
+        self.used_perc = 0
         self.blade_thick = blade_thick
-        self.tolerant = 30    # 容差值
-        self.attach = 100     # 边缘附着宽度
-        self.stuck = 0        # 卡住标记
-        self.last_cut = (0, 0) # 上一次切割尺寸
-        self.ratio = 0.4      # 长宽比阈值
-        self.show = 1.2*10**5 # 面积阈值
+        self.tolerant = 30
+        self.attach = 100
+        self.stuck = 0
+        self.last_cut = (0, 0)
+        self.ratio = 0.4
+        self.show = 1.2*10**5
         logger.debug(f"Created new plate: {length}x{width}, blade thickness: {blade_thick}")
 
     def can_fit(self, small_plate):
-        """检查小板是否能放入当前行或开始新行"""
+        """检查小板是否能放入当前行或开始新行（纯检查，无副作用）"""
         sp_length, sp_width, _ = small_plate
-
-        # 检查是否能放入当前行
-        if self.current_x + sp_length <= self.length and self.current_y + sp_width <= self.width:
-            logger.debug(f"Plate {sp_length}x{sp_width} can fit at current position ({self.current_x}, {self.current_y})")
+        if self.current_x + sp_length <= self.length and self.current_y + max(self.row_width, sp_width) <= self.width:
             return True
-        
-        # 如果不能放入当前行,检查是否可以开始新行
         elif self.current_y + self.row_width + sp_width <= self.width:
-            if not self.stuck:
-                self.update_gap()
-            self.stuck = 0
-            logger.debug(f"Plate {sp_length}x{sp_width} can fit in new row")
             return True
         else:
-            if not self.stuck:
-                self.update_gap()
-                self.current_x = 0
-                self.current_y += self.row_width
-                self.row_width = 0
-                self.stuck = 0
-            logger.debug(f"Plate {sp_length}x{sp_width} cannot fit")
             return False
     
     def can_fit_in_gap(self, small_plate, gap):
         """检查小板是否能放入指定缝隙"""
         sp_length, sp_width, _ = small_plate
         start_x, start_y, end_x, end_y = gap
-        self.current_x1 = start_x
-        self.current_y1 = start_y
-        # 检查尺寸是否合适
         fits = start_x + sp_length <= end_x and start_y + sp_width <= end_y
         if fits:
             logger.debug(f"Plate {sp_length}x{sp_width} can fit in gap at ({start_x}, {start_y})")
@@ -73,66 +51,27 @@ class Plate:
     
     def add_cut_in_gap(self, small_plate):
         """在缝隙中切割小板并添加到切割列表"""
-        if not self.available_gaps:
-            logger.debug("No available gaps for cutting")
-            return False
-            
         sp_length, sp_width, _ = small_plate
-        for gap in self.available_gaps:
-            start_x, start_y, end_x, end_y = gap
+        for gap in self.available_gaps[:]:
             if self.can_fit_in_gap(small_plate, gap):
+                start_x, start_y, end_x, end_y = gap
                 self.cuts.append((small_plate, start_x, start_y, start_x + sp_length, start_y + sp_width))
                 self.used_area += sp_length * sp_width
                 self.available_gaps.remove(gap)
                 logger.info(f"Cut plate {sp_length}x{sp_width} in gap at ({start_x}, {start_y})")
                 
-                if gap[0] + sp_length + self.blade_thick < gap[2]:
-                    new_gap = (gap[0] + sp_length + self.blade_thick, gap[1], gap[2], gap[1] + sp_width + self.blade_thick)
-                    self.available_gaps.append(new_gap)
-                    logger.debug(f"Created new horizontal gap: {new_gap}")
-                    
-                if gap[1] + sp_width + self.blade_thick < gap[3]:
-                    if gap[3] == self.width and gap[0] != 0:
-                        for gap0 in self.available_gaps:
-                            if (gap0[3] == self.width and gap0[2] == gap[0] and 
-                                abs(gap0[1] - (gap[1] + sp_width + self.blade_thick)) < self.tolerant):
-                                new_gap = (gap0[0], max(gap0[1], gap[1] + sp_width + self.blade_thick), gap[2], gap[3])
-                                self.available_gaps.append(new_gap)
-                                self.available_gaps.remove(gap0)
-                                logger.debug(f"Updated existing gap: {new_gap}")
-                                break
-                        else:
-                            new_gap = (gap[0], gap[1] + sp_width + self.blade_thick, gap[2], gap[3])
-                            self.available_gaps.append(new_gap)
-                            logger.debug(f"Created new vertical gap: {new_gap}")
-                    else:
-                        new_gap = (gap[0], gap[1] + sp_width + self.blade_thick, gap[2], gap[3])
-                        self.available_gaps.append(new_gap)
-                        logger.debug(f"Created new vertical gap: {new_gap}")
+                right_gap = (start_x + sp_length + self.blade_thick, start_y, end_x, end_y)
+                self._add_gap(right_gap)
+
+                bottom_gap = (start_x, start_y + sp_width + self.blade_thick, start_x + sp_length, end_y)
+                self._add_gap(bottom_gap)
+                
                 return True
-        logger.debug(f"Could not fit plate {sp_length}x{sp_width} in any available gap")
         return False
 
-    def update_gap(self):
-        """更新可用缝隙信息"""
-        gap0 = (self.current_x, self.current_y, self.length, self.current_y + self.row_width)
-        if self.available_gaps and gap0 not in self.available_gaps:
-            for gap in self.available_gaps:
-                if (self.current_x <= gap[0] + self.tolerant and 
-                    self.current_x > gap[0] - self.tolerant and 
-                    self.current_y == gap[3]):
-                    self.available_gaps.remove(gap)
-                    new_gap = (max(self.current_x, gap[0]), gap[1], self.length, self.current_y + self.row_width)
-                    self.available_gaps.append(new_gap)
-                    logger.debug(f"Updated gap: {new_gap}")
-                    return
-        self.available_gaps.append(gap0)
-        logger.debug(f"Added new gap: {gap0}")
-
     def add_cut(self, small_plate):
-        """切割小板并添加到切割列表"""
+        """切割小板并添加到切割列表（主区域）"""
         x1, x2 = small_plate[:2]
-        # 根据长宽比和面积判断是否需要旋转
         if (x2, x1) == self.last_cut[:2] and x1 and x2 and (x1*x2 < self.show or abs(x1- x2)/max(x1,x2) < self.ratio):
             small_plate0 = (x2, x1, small_plate[2])
         else:
@@ -142,75 +81,100 @@ class Plate:
             return False
 
         sp_length, sp_width, _ = small_plate0
-        if self.current_x + sp_length <= self.length:
-            if (small_plate0[:2] != self.last_cut and 
-                (self.length//sp_width)*((self.tolerant + self.row_width)//sp_length) > 
-                (self.length//sp_length)*((self.tolerant + self.row_width)//sp_width) and 
-                (sp_length*sp_width < self.show or abs(sp_length - sp_width)/max(sp_length, sp_width) < self.ratio)):
-                sp_length, sp_width = sp_width, sp_length
-                logger.debug("Rotated plate for better fit")
-                
+        
+        if self.current_x + sp_length <= self.length and self.current_y + max(self.row_width, sp_width) <= self.width:
             start_x, start_y = self.current_x, self.current_y
-            self.current_x += sp_length + self.blade_thick
             
-            if sp_width + self.blade_thick < self.row_width - self.tolerant:
-                gap = (start_x, start_y + sp_width + self.blade_thick, self.current_x, start_y + self.row_width)
-                self._update_gap_after_cut(gap)
-            elif sp_width + self.blade_thick > self.row_width + self.tolerant:
-                new_gap = (0, start_y + self.row_width, start_x, start_y + sp_width + self.blade_thick)
-                self.available_gaps.append(new_gap)
-                logger.debug(f"Added gap for excess height: {new_gap}")
-                
-            self.row_width = max(self.row_width, sp_width + self.blade_thick)
-            if start_x == 0 and start_y == 0 and start_y + self.row_width <= self.width and start_y + self.row_width > self.width - self.attach:
-                self.row_width = self.width - start_y
-                new_gap = (start_x, start_y + sp_width + self.blade_thick, self.current_x, self.width)
-                self.available_gaps.append(new_gap)
-                logger.debug(f"Added edge gap: {new_gap}")
+            if sp_width < self.row_width:
+                 gap_below = (start_x, start_y + sp_width + self.blade_thick, start_x + sp_length, start_y + self.row_width)
+                 self._add_gap(gap_below)
+
+            self.current_x += sp_length + self.blade_thick
+            self.row_width = max(self.row_width, sp_width)
+            
+            if start_x == 0 and start_y == 0 and self.row_width <= self.width and self.row_width > self.width - self.attach:
+                 self.row_width = self.width - start_y
+                 new_gap = (0, start_y + sp_width + self.blade_thick, self.current_x, self.width)
+                 self._add_gap(new_gap)
         else:
-            if ((self.length//sp_width)*((self.width - self.row_width)//sp_length) > 
-                (self.length//sp_length)*((self.width - self.row_width)//sp_width) and 
-                abs(sp_length - sp_width)/max(sp_length, sp_width) < self.ratio):
-                sp_length, sp_width = sp_width, sp_length
-                logger.debug("Rotated plate for new row")
-                
+            if self.row_width > 0:
+                gap_at_row_end = (self.current_x, self.current_y, self.length, self.current_y + self.row_width)
+                self._add_gap(gap_at_row_end)
+            
             self.current_x = 0
             self.current_y += self.row_width
+            
             start_x, start_y = self.current_x, self.current_y
             self.current_x += sp_length + self.blade_thick
-            self.row_width = sp_width + self.blade_thick
-
+            self.row_width = sp_width
+            
             if start_y + self.row_width <= self.width and start_y + self.row_width > self.width - self.attach:
-                new_gap = (start_x, start_y + self.row_width, self.current_x, self.width)
-                self.available_gaps.append(new_gap)
+                new_gap = (self.current_x, start_y + self.row_width, self.length, self.width)
+                self._add_gap(new_gap)
                 self.row_width = self.width - start_y
-                logger.debug(f"Added new row edge gap: {new_gap}")
-
+        
         end_x, end_y = start_x + sp_length, start_y + sp_width
-        if self.available_gaps:
-            self.available_gaps = [gap for gap in self.available_gaps if not (start_x == gap[0] and start_y == gap[1])]
-
         self.cuts.append((small_plate, start_x, start_y, end_x, end_y))
         self.used_area += sp_length * sp_width
         self.last_cut = (sp_length, sp_width)
         logger.info(f"Cut plate {sp_length}x{sp_width} at ({start_x}, {start_y})")
         return True
 
-    def _update_gap_after_cut(self, gap):
-        for gap0 in self.available_gaps:
-            if (gap0[3] == gap[3] and gap0[2] == gap[0] and 
-                abs(gap0[1] - gap[1]) < self.tolerant):
-                new_gap = (gap0[0], max(gap0[1], gap[1]), gap[2], gap[3])
-                self.available_gaps.append(new_gap)
-                self.available_gaps.remove(gap0)
-                logger.debug(f"Updated gap after cut: {new_gap}")
-                return
-        self.available_gaps.append(gap)
-        logger.debug(f"Added new gap after cut: {gap}")
+    def _add_gap(self, new_gap):
+        """一个集中的、更健壮的方法，用于添加新缝隙并尝试与现有缝隙合并。"""
+        if (new_gap[2] - new_gap[0]) < self.blade_thick or \
+           (new_gap[3] - new_gap[1]) < self.blade_thick:
+            return
+
+        gaps_to_process = [new_gap]
+        
+        while gaps_to_process:
+            current_gap = gaps_to_process.pop(0)
+            merged_with_existing = False
+            i = 0
+            while i < len(self.available_gaps):
+                existing_gap = self.available_gaps[i]
+                
+                # 水平合并
+                if abs(current_gap[1] - existing_gap[1]) < self.tolerant and abs(current_gap[3] - existing_gap[3]) < self.tolerant:
+                    if abs(current_gap[2] - existing_gap[0]) < self.tolerant:
+                        merged_gap = (current_gap[0], min(current_gap[1], existing_gap[1]), existing_gap[2], max(current_gap[3], existing_gap[3]))
+                        del self.available_gaps[i]
+                        gaps_to_process.append(merged_gap)
+                        merged_with_existing = True
+                        break
+                    elif abs(existing_gap[2] - current_gap[0]) < self.tolerant:
+                        merged_gap = (existing_gap[0], min(current_gap[1], existing_gap[1]), current_gap[2], max(current_gap[3], existing_gap[3]))
+                        del self.available_gaps[i]
+                        gaps_to_process.append(merged_gap)
+                        merged_with_existing = True
+                        break
+
+                # 垂直合并
+                if abs(current_gap[0] - existing_gap[0]) < self.tolerant and abs(current_gap[2] - existing_gap[2]) < self.tolerant:
+                    if abs(current_gap[3] - existing_gap[1]) < self.tolerant:
+                        merged_gap = (min(current_gap[0], existing_gap[0]), current_gap[1], max(current_gap[2], existing_gap[2]), existing_gap[3])
+                        del self.available_gaps[i]
+                        gaps_to_process.append(merged_gap)
+                        merged_with_existing = True
+                        break
+                    elif abs(existing_gap[3] - current_gap[1]) < self.tolerant:
+                        merged_gap = (min(current_gap[0], existing_gap[0]), existing_gap[1], max(current_gap[2], existing_gap[2]), current_gap[3])
+                        del self.available_gaps[i]
+                        gaps_to_process.append(merged_gap)
+                        merged_with_existing = True
+                        break
+                i += 1
+            
+            if not merged_with_existing:
+                self.available_gaps.append(current_gap)
 
     def utilization(self):
         """计算板材利用率"""
-        self.used_perc =  (self.used_area / (self.length * self.width)) * 100
+        if self.length * self.width == 0:
+            self.used_perc = 0
+        else:
+            self.used_perc = (self.used_area / (self.length * self.width)) * 100
         logger.info(f"Plate utilization: {self.used_perc:.2f}%")
         return self.used_perc
 
@@ -259,6 +223,10 @@ def optimize_cutting(plates, orders, others, optim = 0, n_plate = None, saw_blad
     
     # 处理库存板材,确保长边在前
     stock_plate_objects = [(max(x1, x2), min(x1, x2), x3) for x1, x2, x3 in stock_plates_list] if stock_plates_list else []
+    
+    if not big_plate_list:
+        logger.error("Big plate list is empty, cannot proceed with optimization.")
+        return []
     length0 = big_plate_list[0][0]
     width0 = big_plate_list[0][1]
     
@@ -266,7 +234,7 @@ def optimize_cutting(plates, orders, others, optim = 0, n_plate = None, saw_blad
     small_plates2 = []
     for x1, x2, x3, nums in small_plates1:
         # 判断是否需要旋转小板材以获得更好的切割效率
-        if (x1 < x2 and (length0//x2)*(width0//x1) >= (length0//x1)*(width0//x2)) or (abs(x1- x2)/max(x1,x2) < 0.56 and (length0//x2)*(width0//x1) > (length0//x1)*(width0//x2)):
+        if (x1 > 0 and x2 > 0 and (x1 < x2 and (length0//x2)*(width0//x1) >= (length0//x1)*(width0//x2)) or (abs(x1- x2)/max(x1,x2) < 0.56 and (length0//x2)*(width0//x1) > (length0//x1)*(width0//x2))):
             # 交换长宽并添加到small_plates2
             small_plates2.append((x2, x1, x3, nums))
             logger.debug(f"Rotated order plate: {x1}x{x2} -> {x2}x{x1}")
@@ -276,60 +244,58 @@ def optimize_cutting(plates, orders, others, optim = 0, n_plate = None, saw_blad
             
     # 统计宽度出现次数并排序
     width_counts = Counter(plate[1] for plate in small_plates2)
-    for i in width_counts.keys():
+    for i in list(width_counts.keys()): # 使用 list 包装以允许在迭代中修改
         if i < 400:
             width_counts[i] = 0
-    small_plates2.sort(key=lambda x: (width_counts[x[1]], x[1], x[0]), reverse=True)
+    small_plates2.sort(key=lambda x: (width_counts.get(x[1], 0), x[1], x[0]), reverse=True)
     small_plate_objects = [(x1, x2, x3) for x1, x2, x3, nums in small_plates2 for _ in range(nums)]
     logger.info(f"Processed {len(small_plate_objects)} total pieces to cut")
 
     # 主切割循环
     used_plates = []
     for i, big_plate in enumerate(big_plate_objects):
+        if i >= n_plate: # 尊重 n_plate 参数
+            break
         logger.info(f"Processing plate {i+1}/{len(big_plate_objects)}")
         if not small_plate_objects:
-            logger.info("All pieces have been cut")
+            logger.info("All pieces have been cut.")
             break
-        small_plate_objects0 = copy.deepcopy(small_plate_objects)
-        plate_used = False
-        for j, small_plate in enumerate(small_plate_objects0):
-            logger.debug(f"Attempting to cut piece {j+1}/{len(small_plate_objects0)}")
-            placed = False
-            small_plate1 = (small_plate[1],small_plate[0],small_plate[2])
 
-            if big_plate.available_gaps:
-                if not placed and big_plate.add_cut_in_gap(small_plate):
-                    placed = True
-                    small_plate_objects.remove(small_plate)
-                    plate_used = True
-                    logger.debug("Piece placed in gap")
+        plate_was_used_in_this_round = False
+        while True:
+            placed_a_piece_this_pass = False
+            piece_to_remove_index = -1
 
-                small_plates3 = [(x1, x2, x3) for x1, x2, x3, nums in small_plates2]
-                idx0 = small_plates3.index(small_plate)
-
-                left0 = any((gap[2]-gap[0])*(gap[3]-gap[1]) > big_plate.show and 
-                        any(sp[0]*sp[1] > big_plate.show and big_plate.can_fit_in_gap(sp, gap)
-                            for sp in small_plates3[idx0+1:])
-                        for gap in big_plate.available_gaps)
-
-                if not placed and not left0 and big_plate.add_cut_in_gap(small_plate1):
-                    placed = True
-                    small_plate_objects.remove(small_plate)
-                    plate_used = True
-                    logger.debug("Rotated piece placed in gap")
+            for j, small_plate in enumerate(small_plate_objects):
+                placed_successfully = False
                 
-            if not placed and big_plate.add_cut(small_plate):
-                placed = True
-                small_plate_objects.remove(small_plate)
-                plate_used = True
-                logger.debug("Piece placed in main area")
-        
-        if plate_used:
+                if big_plate.add_cut_in_gap(small_plate):
+                    placed_successfully = True
+                elif small_plate[0] != small_plate[1]:
+                    small_plate_rotated = (small_plate[1], small_plate[0], small_plate[2])
+                    if big_plate.add_cut_in_gap(small_plate_rotated):
+                        placed_successfully = True
+
+                if not placed_successfully and big_plate.add_cut(small_plate):
+                    placed_successfully = True
+
+                if placed_successfully:
+                    piece_to_remove_index = j
+                    placed_a_piece_this_pass = True
+                    plate_was_used_in_this_round = True
+                    break
+
+            if placed_a_piece_this_pass:
+                del small_plate_objects[piece_to_remove_index]
+            else:
+                logger.info(f"Plate {i+1} is now full or no remaining pieces fit.")
+                break
+
+        if plate_was_used_in_this_round:
             used_plates.append(big_plate)
-    
+
     big_plate_objects = used_plates
 
-    # 只有当stock_plates存在且有数据时才处理库存板材
     if stock_plates_list:
         logger.info("Processing stock plates")
         for i, big_plate in enumerate(big_plate_objects):
@@ -339,25 +305,22 @@ def optimize_cutting(plates, orders, others, optim = 0, n_plate = None, saw_blad
             else:
                 _optimize_stock_placement(big_plate, stock_plate_objects)
 
-    # 计算最终利用率
     for big_plate in big_plate_objects:
         big_plate.utilization()
 
-    # 转换为cutted格式输出
     cutted = []
     for big_plate in big_plate_objects:
-        if big_plate.cuts:  # 只添加有切割记录的板
+        if big_plate.cuts:
             plate_cuts = []
             for cut in big_plate.cuts:
-                # 检查切割板材的ID是否以R开头来判断是否为库存板
                 is_stock = str(cut[0][2]).startswith('R')
                 plate_cuts.append([
-                    cut[1], # start_x
-                    cut[2], # start_y  
-                    cut[0][0], # length
-                    cut[0][1], # width
-                    1 if is_stock else 0,  # is_stock
-                    cut[0][2][1:] if is_stock else cut[0][2] # id
+                    cut[1],
+                    cut[2],  
+                    cut[0][0],
+                    cut[0][1],
+                    1 if is_stock else 0,
+                    cut[0][2][1:] if is_stock else cut[0][2]
                 ])
             cutted.append({
                 'rate': big_plate.used_perc/100,
@@ -369,36 +332,84 @@ def optimize_cutting(plates, orders, others, optim = 0, n_plate = None, saw_blad
     return cutted
 
 def _process_stock_plates(big_plate, stock_plate_objects):
-    logger.debug("Processing stock plates without optimization")
-    for stock_plate in stock_plate_objects:
-        n = int((100 - big_plate.utilization())/100*(big_plate.length * big_plate.width)/(stock_plate[0]*stock_plate[1]))
-        logger.debug(f"Attempting to place {n} copies of stock plate {stock_plate[0]}x{stock_plate[1]}")
-        for _ in range(n):
-            if not big_plate.add_cut(stock_plate):
-                stock_plate1 = (stock_plate[1], stock_plate[0], stock_plate[2])
-                if not big_plate.add_cut_in_gap(stock_plate1):
-                    big_plate.add_cut_in_gap(stock_plate)
+    """使用更智能的贪婪算法，反复尝试将库存板填充到大板的剩余空间中。"""
+    logger.debug("Processing stock plates by greedily filling remaining space.")
+    while True:
+        a_piece_was_placed_in_this_pass = False
+        for stock_plate in stock_plate_objects:
+            stock_plate_rotated = (stock_plate[1], stock_plate[0], stock_plate[2])
+            while True:
+                placed_this_iteration = False
+                if big_plate.add_cut_in_gap(stock_plate):
+                    placed_this_iteration = True
+                elif stock_plate[0] != stock_plate[1] and big_plate.add_cut_in_gap(stock_plate_rotated):
+                    placed_this_iteration = True
+                elif big_plate.add_cut(stock_plate):
+                    placed_this_iteration = True
+
+                if placed_this_iteration:
+                    a_piece_was_placed_in_this_pass = True
+                    continue
+                else:
+                    break
+        if not a_piece_was_placed_in_this_pass:
+            break
 
 def _optimize_stock_placement(big_plate, stock_plate_objects):
-    logger.debug("Optimizing stock plate placement")
-    base_util = big_plate.used_perc
-    n_optim = 0
-    
-    for i in range(min(10, len(stock_plate_objects))):
-        stock_plate_objects0 = stock_plate_objects.copy()
-        tcp0 = stock_plate_objects0.pop(i)
-        stock_plate_objects0 = [tcp0] + stock_plate_objects0
-        big_plate0 = copy.deepcopy(big_plate)
-        
-        _process_stock_plates(big_plate0, stock_plate_objects0)
-        
-        if big_plate0.utilization() > base_util:
-            base_util = big_plate0.used_perc
-            n_optim = i
-            logger.debug(f"Found better utilization: {base_util:.2f}% with stock plate {i}")
+    """通过测试几种不同的智能排序策略来优化库存板的放置，并使用“保存/恢复状态”代替 deepcopy 以提高性能。"""
+    if not stock_plate_objects:
+        return
 
-    stock_plate_objects0 = stock_plate_objects.copy()
-    tcp0 = stock_plate_objects0.pop(n_optim)
-    stock_plate_objects0 = [tcp0] + stock_plate_objects0
-    _process_stock_plates(big_plate, stock_plate_objects0)
-    logger.info(f"Final utilization after stock optimization: {big_plate.used_perc:.2f}%")
+    logger.debug("Optimizing stock plate placement with faster, smarter strategy.")
+
+    original_state = {
+        'cuts': big_plate.cuts.copy(),
+        'available_gaps': big_plate.available_gaps.copy(),
+        'used_area': big_plate.used_area,
+        'current_x': big_plate.current_x,
+        'current_y': big_plate.current_y,
+        'row_width': big_plate.row_width
+    }
+
+    candidate_orderings = {
+        "original": stock_plate_objects,
+        "largest_area_first": sorted(stock_plate_objects, key=lambda p: p[0] * p[1], reverse=True),
+        "smallest_area_first": sorted(stock_plate_objects, key=lambda p: p[0] * p[1]),
+        "largest_perimeter_first": sorted(stock_plate_objects, key=lambda p: 2 * (p[0] + p[1]), reverse=True)
+    }
+
+    best_utilization = -1
+    best_ordering_name = None
+    best_final_state = None
+
+    for name, ordering in candidate_orderings.items():
+        big_plate.cuts = original_state['cuts'].copy()
+        big_plate.available_gaps = original_state['available_gaps'].copy()
+        big_plate.used_area = original_state['used_area']
+        big_plate.current_x = original_state['current_x']
+        big_plate.current_y = original_state['current_y']
+        big_plate.row_width = original_state['row_width']
+
+        _process_stock_plates(big_plate, ordering)
+        current_utilization = big_plate.utilization()
+        
+        logger.debug(f"Testing strategy '{name}': Utilization = {current_utilization:.2f}%")
+
+        if current_utilization > best_utilization:
+            best_utilization = current_utilization
+            best_ordering_name = name
+            best_final_state = {
+                'cuts': big_plate.cuts.copy(),
+                'available_gaps': big_plate.available_gaps.copy(),
+                'used_area': big_plate.used_area,
+                'used_perc': big_plate.used_perc
+            }
+
+    if best_final_state:
+        logger.info(f"Applying best strategy '{best_ordering_name}' with utilization {best_utilization:.2f}%")
+        big_plate.cuts = best_final_state['cuts']
+        big_plate.available_gaps = best_final_state['available_gaps']
+        big_plate.used_area = best_final_state['used_area']
+        big_plate.used_perc = best_final_state['used_perc']
+    else:
+        logger.info("Stock optimization did not yield any valid placement.")
