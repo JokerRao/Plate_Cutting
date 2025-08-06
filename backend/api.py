@@ -101,7 +101,6 @@ class CuttingRequest(BaseModel):
     orders: List[Order]
     others: Optional[List[StockPlate]] = None
     optimization: bool = Field(False, description="Whether to optimize stock plate placement")
-    plate_count: Optional[int] = None
     saw_blade: Optional[int] = Field(None, gt=0, description="Saw blade thickness in mm")
 
 class CuttingResponse(BaseModel):
@@ -196,7 +195,6 @@ async def optimize_plates(
         optimization_details = {
             "saw_blade_width": saw_blade,
             "optimization_enabled": cutting_request.optimization,
-            "plate_count_limit": cutting_request.plate_count,
             "total_plates_available": sum(p['quantity'] for p in plates_dict),
             "total_pieces_requested": sum(o['quantity'] for o in orders_dict),
             "stock_pieces_available": len(others_dict) if others_dict else 0
@@ -208,7 +206,6 @@ async def optimize_plates(
             orders=orders_dict,
             others=others_dict,
             optim=int(cutting_request.optimization),
-            n_plate=cutting_request.plate_count,
             saw_blade=saw_blade
         )
 
