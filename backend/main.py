@@ -1095,28 +1095,28 @@ def compare_algorithms(metrics1: Dict[str, Any], metrics2: Dict[str, Any]) -> in
     elif metrics1['used_plates'] > metrics2['used_plates']:
         return 1
     
-    # 2. 板材数量相同，比较总体利用率（越高越好）
-    rate_diff = abs(metrics1['overall_rate'] - metrics2['overall_rate'])
-    if rate_diff > 0.001:  # 利用率差异大于0.1%
-        return -1 if metrics1['overall_rate'] > metrics2['overall_rate'] else 1
+    # # 2. 板材数量相同，比较总体利用率（越高越好）
+    # rate_diff = abs(metrics1['overall_rate'] - metrics2['overall_rate'])
+    # if rate_diff > 0.001:  # 利用率差异大于0.1%
+    #     return -1 if metrics1['overall_rate'] > metrics2['overall_rate'] else 1
     
-    # 3. 利用率相近，比较最小利用率（避免某块板材利用率特别低）
-    min_rate_diff = abs(metrics1['min_rate'] - metrics2['min_rate'])
-    if min_rate_diff > 0.01:  # 差异大于1%
-        return -1 if metrics1['min_rate'] > metrics2['min_rate'] else 1
+    # # 3. 利用率相近，比较最小利用率（避免某块板材利用率特别低）
+    # min_rate_diff = abs(metrics1['min_rate'] - metrics2['min_rate'])
+    # if min_rate_diff > 0.01:  # 差异大于1%
+    #     return -1 if metrics1['min_rate'] > metrics2['min_rate'] else 1
     
-    # 4. 比较利用率方差（越小越好，表示各板材利用率更均匀）
-    variance_diff = abs(metrics1['rate_variance'] - metrics2['rate_variance'])
-    if variance_diff > 0.0001:
-        return -1 if metrics1['rate_variance'] < metrics2['rate_variance'] else 1
+    # # 4. 比较利用率方差（越小越好，表示各板材利用率更均匀）
+    # variance_diff = abs(metrics1['rate_variance'] - metrics2['rate_variance'])
+    # if variance_diff > 0.0001:
+    #     return -1 if metrics1['rate_variance'] < metrics2['rate_variance'] else 1
     
     # 5. 比较切割复杂度（切割次数越少越好，降低加工成本）
     if metrics1['avg_cuts_per_plate'] != metrics2['avg_cuts_per_plate']:
         return -1 if metrics1['avg_cuts_per_plate'] < metrics2['avg_cuts_per_plate'] else 1
     
-    # 6. 比较最大单板切割数（越小越好，降低单板加工复杂度）
+    # 6. 比较最大单板切割数（越大越好，能放更多板）
     if metrics1['max_cuts_single_plate'] != metrics2['max_cuts_single_plate']:
-        return -1 if metrics1['max_cuts_single_plate'] < metrics2['max_cuts_single_plate'] else 1
+        return -1 if metrics1['max_cuts_single_plate'] > metrics2['max_cuts_single_plate'] else 1
     
     # 7. 如果所有指标都相同，返回相等
     return 0
@@ -1221,6 +1221,7 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
         "MaxRectsBaf": rectpack.MaxRectsBaf,
         "GuillotineBafMinas": rectpack.GuillotineBafMinas,
         "SkylineMwfWm": rectpack.SkylineMwfWm,
+        "GuillotineBssfLlas": rectpack.GuillotineBssfLlas,
     }
     
     # 定义库存算法名称映射
@@ -1281,14 +1282,14 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
                 comparison = compare_algorithms(best_metrics, metrics)
                 if best_metrics['used_plates'] < metrics['used_plates']:
                     logger.info(f"  - 比 {algo_name} 少用 {metrics['used_plates'] - best_metrics['used_plates']} 块板")
-                elif best_metrics['overall_rate'] > metrics['overall_rate']:
-                    logger.info(f"  - 比 {algo_name} 利用率高 {(best_metrics['overall_rate'] - metrics['overall_rate'])*100:.2f}%")
-                elif best_metrics['min_rate'] > metrics['min_rate']:
-                    logger.info(f"  - 比 {algo_name} 最低利用率高 {(best_metrics['min_rate'] - metrics['min_rate'])*100:.2f}%")
-                elif best_metrics['rate_variance'] < metrics['rate_variance']:
-                    logger.info(f"  - 比 {algo_name} 利用率更均匀（方差小 {metrics['rate_variance'] - best_metrics['rate_variance']:.4f}）")
+                # elif best_metrics['overall_rate'] > metrics['overall_rate']:
+                #     logger.info(f"  - 比 {algo_name} 利用率高 {(best_metrics['overall_rate'] - metrics['overall_rate'])*100:.2f}%")
+                # elif best_metrics['min_rate'] > metrics['min_rate']:
+                #     logger.info(f"  - 比 {algo_name} 最低利用率高 {(best_metrics['min_rate'] - metrics['min_rate'])*100:.2f}%")
+                # elif best_metrics['rate_variance'] < metrics['rate_variance']:
+                #     logger.info(f"  - 比 {algo_name} 利用率更均匀（方差小 {metrics['rate_variance'] - best_metrics['rate_variance']:.4f}）")
                 elif best_metrics['avg_cuts_per_plate'] < metrics['avg_cuts_per_plate']:
-                    logger.info(f"  - 比 {algo_name} 切割更简单（平均少 {metrics['avg_cuts_per_plate'] - best_metrics['avg_cuts_per_plate']:.1f} 次/板）")
+                    logger.info(f"  - 比 {algo_name} 切割更简单（平均多 {metrics['avg_cuts_per_plate'] - best_metrics['avg_cuts_per_plate']:.1f} 次/板）")
         
         return best_results
         
