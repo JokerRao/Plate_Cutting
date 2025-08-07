@@ -44,22 +44,22 @@ def create_app(settings: Settings):
         docs_url="/docs",
         redoc_url="/redoc"
     )
-
-    # 配置允许的源
+    
+    # 确保这些 URL 完全匹配（包括协议和端口）
     origins = [
-        "https://platecutting.cedrao.com",
-        "http://localhost:3000",  # 本地开发
-        "http://localhost:5173",  # Vite 默认端口
-        # 添加其他需要的域名
+        "https://platecutting.cedrao.com",  # 确保没有尾部斜杠
+        "http://platecutting.cedrao.com",   # 如果可能使用 HTTP
+        "http://localhost:3000",
+        "http://localhost:5173",
     ]
     
-    # 添加 CORS 中间件
+    # CORS 中间件必须在其他中间件之前添加
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins,  # 或者使用 ["*"] 允许所有源（不推荐用于生产）
+        allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["*"],  # 允许所有 HTTP 方法
-        allow_headers=["*"],  # 允许所有请求头
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=["*"],  # 使用通配符允许所有头
         expose_headers=["*"],
         max_age=3600,
     )
