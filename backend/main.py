@@ -1109,14 +1109,14 @@ def compare_algorithms(metrics1: Dict[str, Any], metrics2: Dict[str, Any]) -> in
     # variance_diff = abs(metrics1['rate_variance'] - metrics2['rate_variance'])
     # if variance_diff > 0.0001:
     #     return -1 if metrics1['rate_variance'] < metrics2['rate_variance'] else 1
-    
-    # 5. 比较切割复杂度（切割次数越少越好，降低加工成本）
-    if metrics1['avg_cuts_per_plate'] != metrics2['avg_cuts_per_plate']:
-        return -1 if metrics1['avg_cuts_per_plate'] < metrics2['avg_cuts_per_plate'] else 1
-    
-    # 6. 比较最大单板切割数（越大越好，能放更多板）
+
+    # 5. 比较最大单板切割数（越大越好，能放更多板）
     if metrics1['max_cuts_single_plate'] != metrics2['max_cuts_single_plate']:
         return -1 if metrics1['max_cuts_single_plate'] > metrics2['max_cuts_single_plate'] else 1
+    
+    # 6. 比较切割复杂度（切割次数越少越好，降低加工成本）
+    if metrics1['avg_cuts_per_plate'] != metrics2['avg_cuts_per_plate']:
+        return -1 if metrics1['avg_cuts_per_plate'] < metrics2['avg_cuts_per_plate'] else 1
     
     # 7. 如果所有指标都相同，返回相等
     return 0
