@@ -44,21 +44,31 @@ def create_app(settings: Settings):
         docs_url="/docs",
         redoc_url="/redoc"
     )
+
+    # 配置允许的源
+    origins = [
+        "https://platecutting.cedrao.com",
+        "http://localhost:3000",  # 本地开发
+        "http://localhost:5173",  # Vite 默认端口
+        # 添加其他需要的域名
+    ]
     
-    # Add middleware
+    # 添加 CORS 中间件
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
-        allow_methods=settings.CORS_ALLOW_METHODS,
-        allow_headers=settings.CORS_ALLOW_HEADERS,
-        expose_headers=settings.CORS_EXPOSE_HEADERS,
-        max_age=settings.CORS_MAX_AGE,
+        allow_origins=origins,  # 或者使用 ["*"] 允许所有源（不推荐用于生产）
+        allow_credentials=True,
+        allow_methods=["*"],  # 允许所有 HTTP 方法
+        allow_headers=["*"],  # 允许所有请求头
+        expose_headers=["*"],
+        max_age=3600,
     )
+    
+    # 其他中间件
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     
-    # Add rate limiter
+    # Rate limiter
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     

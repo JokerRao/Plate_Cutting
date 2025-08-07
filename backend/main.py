@@ -309,7 +309,7 @@ class StockOptimizer:
         
         # 更新库存切割的 plate_id
         for cut in packer.cuts:
-            cut.plate.plate_id = f"R{cut.plate.plate_id}"
+            cut.plate.plate_id = f"{cut.plate.plate_id}"
             stock_cuts.append(cut)
         
         return stock_cuts
@@ -388,9 +388,6 @@ class DataConverter:
         cuts_data = []
         for cut in cuts:
             plate_id = cut.plate.plate_id
-            if cut.is_stock and plate_id.startswith('R'):
-                plate_id = plate_id[1:]  # 移除'R'前缀
-            
             cuts_data.append([
                 cut.x1,  # start_x
                 cut.y1,  # start_y
