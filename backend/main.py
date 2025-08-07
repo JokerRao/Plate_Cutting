@@ -661,75 +661,174 @@ class StockOptimizer:
             return MaxRectsBafPacker(width, height, self.config)
     
     def fill_with_stock(self, width: int, height: int, existing_cuts: List[Cut], 
-                       stock_plates: List[SmallPlate], optimize: bool = False) -> List[Cut]:
+                   stock_plates: List[SmallPlate], optimize: bool = False) -> List[Cut]:
         """用库存板材填充剩余空间"""
         if not stock_plates:
             return []
-        
-        # 创建装箱器
-        packer = self._create_packer(width, height)
-        
-        # 首先将已占用区域添加到装箱器中（模拟已放置的矩形）
-        # 对于不同的算法，需要不同的处理方式
-        if isinstance(packer, MaxRectsBafPacker):
-            # MaxRects算法：通过分割max_rects来处理已占用区域
-            for cut in existing_cuts:
-                occupied_rect = Rectangle(
-                    cut.x1, cut.y1, 
-                    cut.x2 - cut.x1 + self.config.blade_thickness, 
-                    cut.y2 - cut.y1 + self.config.blade_thickness
-                )
-                packer._split(occupied_rect)
-                packer._remove_duplicates()
-        elif isinstance(packer, GuillotineBafMinasPacker):
-            # Guillotine算法：从空闲区域中移除已占用部分
-            # 这里简化处理，通过重新计算空闲区域
-            self._update_guillotine_sections(packer, existing_cuts)
-        
-        # 根据优化标志处理库存板
-        if optimize:
-            # 优化模式：按面积排序，大的优先
-            sorted_stock = sorted(stock_plates, key=lambda p: p.area, reverse=True)
-        else:
-            # 非优化模式：按原始顺序
-            sorted_stock = stock_plates
-        
-        # 尝试多轮填充以最大化利用率
-        max_rounds = 10  # 最多尝试10轮
-        round_count = 0
-        
-        while sorted_stock and round_count < max_rounds:
-            round_count += 1
-            placed_this_round = 0
+
+        def _try_stock_arrangement(sorted_stock: List[SmallPlate]) -> Tuple[List[Cut], float]:
+            """
+            尝试一种库存板排列，返回切割结果和利用率
             
-            # 为每种库存板材尝试放置
-            for stock in sorted_stock:
-                # 检查适配度
-                if packer.fitness(stock.length + self.config.blade_thickness, 
-                                stock.width + self.config.blade_thickness) is not None:
-                    if packer.add_rect(stock):
-                        placed_this_round += 1
-                        # 继续尝试放置同样的板材
-                        while packer.add_rect(stock):
+            Args:
+                sorted_stock: 排序后的库存板列表
+                
+            Returns:
+                (切割结果, 利用率)
+            """
+            # 创建新的装箱器
+            packer = self._create_packer(width, height)
+            
+            # 处理已占用区域
+            if isinstance(packer, MaxRectsBafPacker):
+                for cut in existing_cuts:
+                    occupied_rect = Rectangle(
+                        cut.x1, cut.y1, 
+                        cut.x2 - cut.x1 + self.config.blade_thickness, 
+                        cut.y2 - cut.y1 + self.config.blade_thickness
+                    )
+                    packer._split(occupied_rect)
+                    packer._remove_duplicates()
+            elif isinstance(packer, GuillotineBafMinasPacker):
+                self._update_guillotine_sections(packer, existing_cuts)
+            
+            # 尝试多轮填充以最大化利用率
+            max_rounds = 10
+            round_count = 0
+            
+            while sorted_stock and round_count < max_rounds:
+                round_count += 1
+                placed_this_round = 0
+                
+                # 为每种库存板材尝试放置
+                for stock in sorted_stock:
+                    # 检查适配度
+                    if packer.fitness(stock.length + self.config.blade_thickness, 
+                                    stock.width + self.config.blade_thickness) is not None:
+                        if packer.add_rect(stock):
                             placed_this_round += 1
+                            # 继续尝试放置同样的板材
+                            while packer.add_rect(stock):
+                                placed_this_round += 1
+                
+                # 如果这轮没有放置任何板材，结束
+                if placed_this_round == 0:
+                    break
             
-            # 如果这轮没有放置任何板材，结束
-            if placed_this_round == 0:
-                break
+            # 更新库存切割的 plate_id
+            for i, cut in enumerate(packer.cuts):
+                if not cut.plate.plate_id:
+                    cut.plate.plate_id = f"STOCK_{i+1}"
             
-            logger.debug(f"第{round_count}轮填充了{placed_this_round}块库存板材")
-        
-        # 更新库存切割的 plate_id
-        for cut in packer.cuts:
-            if not cut.plate.plate_id:
-                cut.plate.plate_id = f"STOCK_{len(packer.cuts)}"
-        
-        # 记录最终利用率
-        utilization = packer.get_utilization()
-        algorithm_name = "Guillotine BAF+MINAS" if self.algorithm == "guillotine_baf_minas" else "MaxRects BAF"
-        logger.debug(f"库存填充完成（{algorithm_name}），总利用率: {utilization:.2%}，放置了{len(packer.cuts)}块库存板材")
-        
-        return packer.cuts
+            # 计算利用率
+            utilization = packer.get_utilization()
+            
+            return packer.cuts, utilization
+
+        if optimize:
+            # 优化模式：尝试多种库存板排列顺序
+            logger.info("启用库存优化模式，尝试多种排列...")
+            
+            best_cuts = []
+            best_utilization = 0.0
+            best_arrangement = "默认"
+            
+            # 生成不同的排列策略
+            arrangements = []
+            
+            # 1. 按面积从大到小排序（原有逻辑）
+            arrangements.append(("面积降序", sorted(stock_plates, key=lambda p: p.area, reverse=True)))
+            
+            # 2. 按面积从小到大排序
+            arrangements.append(("面积升序", sorted(stock_plates, key=lambda p: p.area)))
+            
+            # 3. 按长度降序排列
+            arrangements.append(("长度降序", sorted(stock_plates, key=lambda p: p.length, reverse=True)))
+            
+            # 4. 按宽度降序排列
+            arrangements.append(("宽度降序", sorted(stock_plates, key=lambda p: p.width, reverse=True)))
+            
+            # 5. 按周长降序排列
+            arrangements.append(("周长降序", sorted(stock_plates, key=lambda p: 2*(p.length + p.width), reverse=True)))
+            
+            # 6. 原始顺序
+            arrangements.append(("原始顺序", stock_plates.copy()))
+            
+            # 7. 尝试从不同位置开始的循环排列（限制数量避免过度计算）
+            if len(stock_plates) <= 10:  # 只对较小的库存列表尝试循环排列
+                for i in range(1, min(len(stock_plates), 6)):  # 最多尝试前3个位置开始
+                    rotated = stock_plates[i:] + stock_plates[:i]
+                    arrangements.append((f"从第{i+1}个开始", rotated))
+            
+            # 8. 如果库存板种类较少，尝试优化的混合策略
+            if len(set((p.length, p.width) for p in stock_plates)) <= 6:
+                # 大板优先，小板填充策略
+                large_plates = [p for p in stock_plates if p.area >= 1.2*10**5] 
+                small_plates = [p for p in stock_plates if p.area < 1.2*10**5]
+                large_first = sorted(large_plates, key=lambda p: p.area, reverse=True) + \
+                            sorted(small_plates, key=lambda p: p.area)
+                arrangements.append(("大板优先", large_first))
+                
+                # 长条优先策略
+                long_plates = [p for p in stock_plates if max(p.length, p.width) / min(p.length, p.width) >= 2]
+                square_plates = [p for p in stock_plates if max(p.length, p.width) / min(p.length, p.width) < 2]
+                long_first = sorted(long_plates, key=lambda p: p.area, reverse=True) + \
+                            sorted(square_plates, key=lambda p: p.area, reverse=True)
+                arrangements.append(("长条优先", long_first))
+            
+            # 测试每种排列
+            for arrangement_name, sorted_stock in arrangements:
+                logger.debug(f"测试排列: {arrangement_name}")
+                
+                try:
+                    cuts, utilization = _try_stock_arrangement(sorted_stock)
+                    
+                    logger.debug(f"  {arrangement_name} - 利用率: {utilization:.3%}, 切割数: {len(cuts)}")
+                    
+                    # 选择更优的方案
+                    # 优先考虑利用率，其次考虑切割数量
+                    is_better = False
+                    if utilization > best_utilization + 0.001:  # 利用率高0.1%以上
+                        is_better = True
+                    elif abs(utilization - best_utilization) <= 0.001:  # 利用率相近
+                        if len(cuts) < len(best_cuts):  # 切割数量更少
+                            is_better = True
+                    
+                    if is_better:
+                        best_cuts = cuts
+                        best_utilization = utilization
+                        best_arrangement = arrangement_name
+                        
+                except Exception as e:
+                    logger.warning(f"测试排列 {arrangement_name} 时发生错误: {e}")
+                    continue
+            
+            # 输出最优结果信息
+            algorithm_name = "Guillotine BAF+MINAS" if self.algorithm == "guillotine_baf_minas" else "MaxRects BAF"
+            logger.info(f"库存填充完成（{algorithm_name}）")
+            logger.info(f"最优排列: {best_arrangement}")
+            logger.info(f"总利用率: {best_utilization:.2%}")
+            logger.info(f"放置了 {len(best_cuts)} 块库存板材")
+            
+            # 显示排列优化的收益
+            if best_arrangement != "原始顺序":
+                # 计算默认方案的利用率进行比较
+                default_cuts, default_utilization = _try_stock_arrangement(stock_plates)
+                improvement = best_utilization - default_utilization
+                if improvement > 0.001:
+                    logger.info(f"相比默认排列提升利用率: +{improvement:.2%}")
+            
+            return best_cuts
+            
+        else:
+            # 非优化模式：使用原始顺序
+            logger.debug("使用原始顺序填充库存")
+            cuts, utilization = _try_stock_arrangement(stock_plates)
+            
+            algorithm_name = "Guillotine BAF+MINAS" if self.algorithm == "guillotine_baf_minas" else "MaxRects BAF"
+            logger.debug(f"库存填充完成（{algorithm_name}），利用率: {utilization:.2%}，放置了{len(cuts)}块库存板材")
+            
+            return cuts
     
     def _update_guillotine_sections(self, packer: GuillotineBafMinasPacker, existing_cuts: List[Cut]):
         """更新Guillotine算法的空闲区域，排除已占用部分"""
