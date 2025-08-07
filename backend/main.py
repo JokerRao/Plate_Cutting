@@ -2,6 +2,9 @@ import logging
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple
 import rectpack
+import itertools
+import collections
+import operator
 
 # 配置日志
 logging.basicConfig(
@@ -41,122 +44,473 @@ class Cut:
     is_stock: bool = False
 
 
+class Rectangle:
+    """矩形类"""
+    
+    def __init__(self, x: int, y: int, width: int, height: int, rid=None):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.rid = rid
+    
+    @property
+    def left(self) -> int:
+        return self.x
+    
+    @property
+    def right(self) -> int:
+        return self.x + self.width
+    
+    @property
+    def bottom(self) -> int:
+        return self.y
+    
+    @property
+    def top(self) -> int:
+        return self.y + self.height
+    
+    def area(self) -> int:
+        """返回矩形面积"""
+        return self.width * self.height
+    
+    def intersects(self, other: 'Rectangle') -> bool:
+        """检查两个矩形是否相交"""
+        return not (self.right <= other.left or 
+                   other.right <= self.left or
+                   self.top <= other.bottom or 
+                   other.top <= self.bottom)
+    
+    def contains(self, other: 'Rectangle') -> bool:
+        """检查是否完全包含另一个矩形"""
+        return (self.left <= other.left and 
+                self.bottom <= other.bottom and
+                self.right >= other.right and 
+                self.top >= other.top)
+    
+    def join(self, other: 'Rectangle') -> bool:
+        """尝试合并两个相邻的矩形"""
+        # 检查是否可以水平合并
+        if (self.y == other.y and self.height == other.height):
+            if self.right == other.left:
+                self.width += other.width
+                return True
+            elif other.right == self.left:
+                self.x = other.x
+                self.width += other.width
+                return True
+        
+        # 检查是否可以垂直合并
+        if (self.x == other.x and self.width == other.width):
+            if self.top == other.bottom:
+                self.height += other.height
+                return True
+            elif other.top == self.bottom:
+                self.y = other.y
+                self.height += other.height
+                return True
+        
+        return False
+    
+    def __repr__(self) -> str:
+        return f"Rectangle({self.x}, {self.y}, {self.width}, {self.height})"
+
+
 class CustomStockPacker:
-    """自定义库存板装箱器 - 实现 MaxRects 算法"""
+    """自定义库存板装箱器 - 基于标准 MaxRects BAF 算法实现"""
     
     def __init__(self, width: int, height: int, config: CuttingConfig):
         self.width = width
         self.height = height
         self.config = config
-        self.free_rects = [(0, 0, width, height)]  # (x, y, w, h)
+        self.rot = True  # 允许旋转
+        self.rectangles = []  # 已放置的矩形
         self.cuts: List[Cut] = []
-        
-    def add_rect(self, plate: SmallPlate) -> bool:
-        """添加矩形"""
-        best_rect = None
-        best_score = float('inf')
-        best_rotated = False
-        best_index = -1
-        
-        # 尝试两种方向
-        for rotated in [False, True]:
-            w = plate.width if rotated else plate.length
-            h = plate.length if rotated else plate.width
-            
-            # 在所有空闲矩形中寻找最佳位置
-            for i, (fx, fy, fw, fh) in enumerate(self.free_rects):
-                if w <= fw and h <= fh:
-                    # 使用最佳短边适配策略
-                    leftover_x = fw - w
-                    leftover_y = fh - h
-                    score = min(leftover_x, leftover_y)
-                    
-                    if score < best_score:
-                        best_score = score
-                        best_rect = (fx, fy, fw, fh)
-                        best_rotated = rotated
-                        best_index = i
-        
-        if best_rect:
-            fx, fy, fw, fh = best_rect
-            
-            # 确定实际尺寸
-            actual_width = plate.width if best_rotated else plate.length
-            actual_height = plate.length if best_rotated else plate.width
-            
-            # 记录切割
-            cut = Cut(
-                plate=plate,
-                x1=fx,
-                y1=fy,
-                x2=fx + actual_width,
-                y2=fy + actual_height,
-                is_stock=True
-            )
-            self.cuts.append(cut)
-            
-            # 分割空闲矩形
-            self._split_free_rect(best_index, fx, fy, actual_width, actual_height)
-            
-            return True
-        
-        return False
+        self.reset()
     
-    def _split_free_rect(self, index: int, used_x: int, used_y: int, used_w: int, used_h: int):
-        """分割空闲矩形"""
-        fx, fy, fw, fh = self.free_rects[index]
-        del self.free_rects[index]
+    def reset(self):
+        """重置装箱器"""
+        self._max_rects = [Rectangle(0, 0, self.width, self.height)]
+        self.rectangles = []
+        self.cuts = []
+    
+    def _rect_fitness(self, max_rect: Rectangle, width: int, height: int) -> Optional[float]:
+        """
+        计算矩形适配度 - 使用 Best Area Fit 策略
         
-        # 添加锯片厚度
-        used_w_with_blade = used_w + self.config.blade_thickness
-        used_h_with_blade = used_h + self.config.blade_thickness
+        Args:
+            max_rect: 目标最大矩形
+            width: 待放置矩形宽度
+            height: 待放置矩形高度
+            
+        Returns:
+            适配度值（越小越好），如果无法放置则返回None
+        """
+        if width > max_rect.width or height > max_rect.height:
+            return None
+        
+        # Best Area Fit: 选择面积最小的能容纳的最大矩形
+        return (max_rect.width * max_rect.height) - (width * height)
+    
+    def _select_position(self, w: int, h: int) -> Tuple[Optional[Rectangle], Optional[Rectangle]]:
+        """
+        选择最佳放置位置
+        
+        Args:
+            w: 矩形宽度
+            h: 矩形高度
+            
+        Returns:
+            (放置矩形, 选中的最大矩形)，如果无法放置则返回(None, None)
+        """
+        if not self._max_rects:
+            return None, None
+        
+        first_item = operator.itemgetter(0)
+        
+        # 正常方向的矩形
+        fitn = ((self._rect_fitness(m, w, h), w, h, m) for m in self._max_rects 
+                if self._rect_fitness(m, w, h) is not None)
+        
+        # 旋转后的矩形
+        fitr = ((self._rect_fitness(m, h, w), h, w, m) for m in self._max_rects 
+                if self._rect_fitness(m, h, w) is not None)
+        
+        if not self.rot:
+            fitr = []
+        
+        fit = itertools.chain(fitn, fitr)
+        
+        try:
+            _, w, h, m = min(fit, key=first_item)
+        except ValueError:
+            return None, None
+        
+        return Rectangle(m.x, m.y, w, h), m
+    
+    def _generate_splits(self, m: Rectangle, r: Rectangle) -> List[Rectangle]:
+        """
+        当一个矩形被放置在最大矩形内时，可能产生最多4个新的最大矩形
+        
+        Args:
+            m: 原最大矩形
+            r: 被放置的矩形
+            
+        Returns:
+            新产生的最大矩形列表
+        """
+        new_rects = []
+        
+        # 左侧剩余
+        if r.left > m.left:
+            new_rects.append(Rectangle(m.left, m.bottom, r.left - m.left, m.height))
         
         # 右侧剩余
-        if used_x + used_w_with_blade < fx + fw:
-            self.free_rects.append((
-                used_x + used_w_with_blade,
-                fy,
-                fx + fw - used_x - used_w_with_blade,
-                fh
-            ))
+        if r.right < m.right:
+            new_rects.append(Rectangle(r.right, m.bottom, m.right - r.right, m.height))
         
         # 上方剩余
-        if used_y + used_h_with_blade < fy + fh:
-            self.free_rects.append((
-                fx,
-                used_y + used_h_with_blade,
-                fw,
-                fy + fh - used_y - used_h_with_blade
+        if r.top < m.top:
+            new_rects.append(Rectangle(m.left, r.top, m.width, m.top - r.top))
+        
+        # 下方剩余
+        if r.bottom > m.bottom:
+            new_rects.append(Rectangle(m.left, m.bottom, m.width, r.bottom - m.bottom))
+        
+        return new_rects
+    
+    def _split(self, rect: Rectangle):
+        """
+        分割所有与给定矩形相交的最大矩形
+        
+        Args:
+            rect: 新放置的矩形
+        """
+        max_rects = collections.deque()
+        
+        for r in self._max_rects:
+            if r.intersects(rect):
+                max_rects.extend(self._generate_splits(r, rect))
+            else:
+                max_rects.append(r)
+        
+        self._max_rects = list(max_rects)
+    
+    def _remove_duplicates(self):
+        """移除被其他矩形包含的最大矩形"""
+        contained = set()
+        for m1, m2 in itertools.combinations(self._max_rects, 2):
+            if m1.contains(m2):
+                contained.add(m2)
+            elif m2.contains(m1):
+                contained.add(m1)
+        
+        self._max_rects = [m for m in self._max_rects if m not in contained]
+    
+    def add_rect(self, plate: SmallPlate) -> bool:
+        """
+        添加矩形到装箱器中
+        
+        Args:
+            plate: 要添加的板材
+            
+        Returns:
+            是否成功添加
+        """
+        # 考虑锯片厚度
+        needed_width = plate.length + self.config.blade_thickness
+        needed_height = plate.width + self.config.blade_thickness
+        
+        # 寻找最佳位置
+        rect, _ = self._select_position(needed_width, needed_height)
+        if not rect:
+            return False
+        
+        # 分割相交的最大矩形
+        self._split(rect)
+        
+        # 移除重复的最大矩形
+        self._remove_duplicates()
+        
+        # 创建实际放置的矩形（不包含锯片厚度）
+        actual_width = plate.length
+        actual_height = plate.width
+        
+        # 检查是否旋转了
+        rotated = (rect.width - self.config.blade_thickness != plate.length)
+        if rotated:
+            actual_width, actual_height = actual_height, actual_width
+        
+        # 记录切割
+        cut = Cut(
+            plate=plate,
+            x1=rect.x,
+            y1=rect.y,
+            x2=rect.x + actual_width,
+            y2=rect.y + actual_height,
+            is_stock=True
+        )
+        self.cuts.append(cut)
+        
+        # 存储矩形信息
+        rect.rid = plate.plate_id
+        self.rectangles.append(rect)
+        
+        return True
+    
+    def fitness(self, width: int, height: int) -> Optional[float]:
+        """
+        计算给定尺寸矩形的适配度
+        
+        Args:
+            width: 矩形宽度
+            height: 矩形高度
+            
+        Returns:
+            适配度值，如果无法放置则返回None
+        """
+        rect, max_rect = self._select_position(width, height)
+        if rect is None:
+            return None
+        
+        return self._rect_fitness(max_rect, rect.width, rect.height)
+    
+    def get_utilization(self) -> float:
+        """计算当前利用率"""
+        if not self.rectangles:
+            return 0.0
+        
+        total_area = self.width * self.height
+        used_area = sum(r.width * r.height for r in self.rectangles)
+        return used_area / total_area if total_area > 0 else 0.0
+
+
+class CustomGuillotinePacker:
+    """自定义Guillotine装箱器 - 实现GuillotineBafMinas算法"""
+    
+    def __init__(self, width: int, height: int, config: CuttingConfig):
+        self.width = width
+        self.height = height
+        self.config = config
+        self.rot = True  # 允许旋转
+        self.merge = True  # 允许合并空闲区域
+        self.rectangles = []  # 已放置的矩形
+        self.cuts: List[Cut] = []
+        self.reset()
+    
+    def reset(self):
+        """重置装箱器"""
+        self._sections = []
+        self._add_section(Rectangle(0, 0, self.width, self.height))
+        self.rectangles = []
+        self.cuts = []
+    
+    def _add_section(self, section: Rectangle):
+        """添加新的空闲区域，并尝试与现有区域合并"""
+        section.rid = 0
+        plen = 0
+        
+        # 尝试合并区域
+        while self.merge and self._sections and plen != len(self._sections):
+            plen = len(self._sections)
+            self._sections = [s for s in self._sections if not section.join(s)]
+        
+        self._sections.append(section)
+    
+    def _section_fitness_baf(self, section: Rectangle, width: int, height: int) -> Optional[float]:
+        """Best Area Fit: 选择面积浪费最小的区域"""
+        if width > section.width or height > section.height:
+            return None
+        return section.area() - width * height
+    
+    def _split_minas(self, section: Rectangle, width: int, height: int):
+        """
+        Min Area Split (MINAS): 最小化较小剩余区域的面积
+        这有助于保持剩余空间更加集中
+        """
+        # 计算两种分割方式产生的剩余面积
+        horizontal_area = width * (section.height - height)
+        vertical_area = height * (section.width - width)
+        
+        if horizontal_area >= vertical_area:
+            # 水平分割
+            self._split_horizontal(section, width, height)
+        else:
+            # 垂直分割
+            self._split_vertical(section, width, height)
+    
+    def _split_horizontal(self, section: Rectangle, width: int, height: int):
+        """水平分割：矩形放置在左下角，水平线分割"""
+        # 上方剩余区域
+        if height < section.height:
+            self._add_section(Rectangle(
+                section.x, section.y + height,
+                section.width, section.height - height
             ))
         
-        # 清理被完全包含的矩形
-        self._clean_free_rects()
+        # 右侧剩余区域
+        if width < section.width:
+            self._add_section(Rectangle(
+                section.x + width, section.y,
+                section.width - width, height
+            ))
     
-    def _clean_free_rects(self):
-        """清理被完全包含的空闲矩形"""
-        i = 0
-        while i < len(self.free_rects):
-            j = i + 1
-            while j < len(self.free_rects):
-                if self._is_contained(self.free_rects[i], self.free_rects[j]):
-                    del self.free_rects[i]
-                    i -= 1
-                    break
-                elif self._is_contained(self.free_rects[j], self.free_rects[i]):
-                    del self.free_rects[j]
-                else:
-                    j += 1
-            i += 1
+    def _split_vertical(self, section: Rectangle, width: int, height: int):
+        """垂直分割：矩形放置在左下角，垂直线分割"""
+        # 上方剩余区域
+        if height < section.height:
+            self._add_section(Rectangle(
+                section.x, section.y + height,
+                width, section.height - height
+            ))
+        
+        # 右侧剩余区域
+        if width < section.width:
+            self._add_section(Rectangle(
+                section.x + width, section.y,
+                section.width - width, section.height
+            ))
     
-    def _is_contained(self, rect1: Tuple, rect2: Tuple) -> bool:
-        """检查 rect1 是否被 rect2 包含"""
-        x1, y1, w1, h1 = rect1
-        x2, y2, w2, h2 = rect2
-        return x1 >= x2 and y1 >= y2 and x1 + w1 <= x2 + w2 and y1 + h1 <= y2 + h2
+    def _select_best_section(self, w: int, h: int) -> Tuple[Optional[Rectangle], bool]:
+        """选择最佳区域放置矩形"""
+        best_fitness = None
+        best_section = None
+        best_rotated = False
+        
+        # 尝试正常方向
+        for section in self._sections:
+            fitness = self._section_fitness_baf(section, w, h)
+            if fitness is not None:
+                if best_fitness is None or fitness < best_fitness:
+                    best_fitness = fitness
+                    best_section = section
+                    best_rotated = False
+        
+        # 尝试旋转方向
+        if self.rot:
+            for section in self._sections:
+                fitness = self._section_fitness_baf(section, h, w)
+                if fitness is not None:
+                    if best_fitness is None or fitness < best_fitness:
+                        best_fitness = fitness
+                        best_section = section
+                        best_rotated = True
+        
+        return best_section, best_rotated
+    
+    def add_rect(self, plate: SmallPlate) -> bool:
+        """
+        添加矩形到装箱器中
+        
+        Args:
+            plate: 要添加的板材
+            
+        Returns:
+            是否成功添加
+        """
+        # 考虑锯片厚度
+        needed_width = plate.length + self.config.blade_thickness
+        needed_height = plate.width + self.config.blade_thickness
+        
+        # 选择最佳区域
+        section, rotated = self._select_best_section(needed_width, needed_height)
+        if not section:
+            return False
+        
+        if rotated:
+            needed_width, needed_height = needed_height, needed_width
+        
+        # 移除选中的区域并分割
+        self._sections.remove(section)
+        self._split_minas(section, needed_width, needed_height)
+        
+        # 创建实际放置的矩形（不包含锯片厚度）
+        actual_width = plate.length
+        actual_height = plate.width
+        
+        if rotated:
+            actual_width, actual_height = actual_height, actual_width
+        
+        # 记录切割
+        cut = Cut(
+            plate=plate,
+            x1=section.x,
+            y1=section.y,
+            x2=section.x + actual_width,
+            y2=section.y + actual_height,
+            is_stock=True
+        )
+        self.cuts.append(cut)
+        
+        # 存储矩形信息
+        rect = Rectangle(section.x, section.y, needed_width, needed_height, plate.plate_id)
+        self.rectangles.append(rect)
+        
+        return True
+    
+    def fitness(self, width: int, height: int) -> Optional[float]:
+        """计算给定尺寸矩形的适配度"""
+        section, rotated = self._select_best_section(width, height)
+        if not section:
+            return None
+        
+        if rotated:
+            return self._section_fitness_baf(section, height, width)
+        else:
+            return self._section_fitness_baf(section, width, height)
+    
+    def get_utilization(self) -> float:
+        """计算当前利用率"""
+        if not self.rectangles:
+            return 0.0
+        
+        total_area = self.width * self.height
+        used_area = sum(r.width * r.height for r in self.rectangles)
+        return used_area / total_area if total_area > 0 else 0.0
 
 
 class PlateOptimizer:
-    """板材优化器"""
+    """板材优化器 - 用于处理订单，保持原有逻辑"""
     
     def __init__(self, config: CuttingConfig, algorithm: rectpack = rectpack.GuillotineBssfMaxas):
         self.config = config
@@ -202,12 +556,6 @@ class PlateOptimizer:
             for rect in bin_data:
                 # 修复：rectpack返回Rectangle对象，需要访问其属性
                 try:
-                    # 调试：打印Rectangle对象的所有属性
-                    if hasattr(rect, '__dict__'):
-                        logger.debug(f"Rectangle attributes: {rect.__dict__}")
-                    else:
-                        logger.debug(f"Rectangle dir: {[attr for attr in dir(rect) if not attr.startswith('_')]}")
-                    
                     x = rect.x
                     y = rect.y
                     w = rect.width
@@ -226,8 +574,6 @@ class PlateOptimizer:
                     
                 except AttributeError as e:
                     logger.warning(f"Error accessing Rectangle attributes: {e}")
-                    logger.warning(f"Rectangle type: {type(rect)}")
-                    logger.warning(f"Available attributes: {[attr for attr in dir(rect) if not attr.startswith('_')]}")
                     continue
                 
                 if rid is None or rid in packed_indices:
@@ -267,10 +613,16 @@ class PlateOptimizer:
 
 
 class StockOptimizer:
-    """库存板材优化器"""
+    """库存板材优化器 - 支持MaxRects BAF和Guillotine两种算法"""
     
-    def __init__(self, config: CuttingConfig):
+    def __init__(self, config: CuttingConfig, algorithm: str = "maxrects"):
+        """
+        Args:
+            config: 切割配置
+            algorithm: 算法选择 ("maxrects" 或 "guillotine")
+        """
         self.config = config
+        self.algorithm = algorithm.lower()
     
     def fill_with_stock(self, width: int, height: int, existing_cuts: List[Cut], 
                        stock_plates: List[SmallPlate], optimize: bool = False) -> List[Cut]:
@@ -278,67 +630,146 @@ class StockOptimizer:
         if not stock_plates:
             return []
         
-        # 创建自定义装箱器
-        packer = CustomStockPacker(width, height, self.config)
+        # 根据算法选择创建不同的装箱器
+        if self.algorithm == "guillotine":
+            packer = CustomGuillotinePacker(width, height, self.config)
+            logger.debug("使用Guillotine BAF MINAS算法填充库存")
+        else:  # maxrects
+            packer = CustomStockPacker(width, height, self.config)
+            logger.debug("使用MaxRects BAF算法填充库存")
         
-        # 首先标记已占用区域
-        for cut in existing_cuts:
-            # 简化处理：将已占用区域从空闲矩形中移除
-            packer.free_rects = self._remove_occupied_area(
-                packer.free_rects, 
-                cut.x1, cut.y1, 
-                cut.x2 - cut.x1, 
-                cut.y2 - cut.y1
-            )
+        # 首先将已占用区域添加到装箱器中（模拟已放置的矩形）
+        if self.algorithm == "maxrects":
+            for cut in existing_cuts:
+                occupied_rect = Rectangle(
+                    cut.x1, cut.y1, 
+                    cut.x2 - cut.x1 + self.config.blade_thickness, 
+                    cut.y2 - cut.y1 + self.config.blade_thickness
+                )
+                # 分割被占用区域
+                packer._split(occupied_rect)
+                packer._remove_duplicates()
+        else:  # guillotine
+            # 对于Guillotine算法，需要从初始区域中移除已占用的部分
+            for cut in existing_cuts:
+                # 创建一个占位矩形（包含锯片厚度）
+                occupied = Rectangle(
+                    cut.x1, cut.y1,
+                    cut.x2 - cut.x1 + self.config.blade_thickness,
+                    cut.y2 - cut.y1 + self.config.blade_thickness
+                )
+                
+                # 处理每个section，分割出未被占用的部分
+                new_sections = []
+                for section in packer._sections:
+                    if not occupied.intersects(section):
+                        # 不相交，保留整个section
+                        new_sections.append(section)
+                    else:
+                        # 相交，需要分割section，保留未被占用的部分
+                        # 可能产生最多4个新的section
+                        
+                        # 左侧部分（如果存在）
+                        if section.x < occupied.x and occupied.x < section.x + section.width:
+                            left_section = Rectangle(
+                                section.x, section.y,
+                                occupied.x - section.x, section.height
+                            )
+                            new_sections.append(left_section)
+                        
+                        # 右侧部分（如果存在）
+                        if occupied.x + occupied.width < section.x + section.width:
+                            right_x = max(occupied.x + occupied.width, section.x)
+                            right_section = Rectangle(
+                                right_x, section.y,
+                                section.x + section.width - right_x, section.height
+                            )
+                            new_sections.append(right_section)
+                        
+                        # 下方部分（如果存在）
+                        if section.y < occupied.y and occupied.y < section.y + section.height:
+                            bottom_section = Rectangle(
+                                section.x, section.y,
+                                section.width, occupied.y - section.y
+                            )
+                            new_sections.append(bottom_section)
+                        
+                        # 上方部分（如果存在）
+                        if occupied.y + occupied.height < section.y + section.height:
+                            top_y = max(occupied.y + occupied.height, section.y)
+                            top_section = Rectangle(
+                                section.x, top_y,
+                                section.width, section.y + section.height - top_y
+                            )
+                            new_sections.append(top_section)
+                
+                packer._sections = new_sections
+                
+            # 合并相邻的sections以优化空间
+            if packer.merge and packer._sections:
+                merged = True
+                while merged:
+                    merged = False
+                    temp_sections = []
+                    used_indices = set()
+                    
+                    for i, s1 in enumerate(packer._sections):
+                        if i in used_indices:
+                            continue
+                        merged_section = Rectangle(s1.x, s1.y, s1.width, s1.height)
+                        for j, s2 in enumerate(packer._sections):
+                            if i != j and j not in used_indices:
+                                if merged_section.join(s2):
+                                    used_indices.add(j)
+                                    merged = True
+                        temp_sections.append(merged_section)
+                        used_indices.add(i)
+                    
+                    packer._sections = temp_sections
         
         # 根据优化标志处理库存板
         if optimize:
-            # 优化模式：按面积排序
+            # 优化模式：按面积排序，大的优先
             sorted_stock = sorted(stock_plates, key=lambda p: p.area, reverse=True)
         else:
             # 非优化模式：按原始顺序
             sorted_stock = stock_plates
         
-        # 填充库存板材
-        stock_cuts = []
-        for stock in sorted_stock:
-            # 尝试多次放置同一库存板材（无数量限制）
-            while packer.add_rect(stock):
-                # 成功放置一个，继续尝试
-                pass
+        # 尝试多轮填充以最大化利用率
+        max_rounds = 10  # 最多尝试10轮
+        round_count = 0
+        
+        while sorted_stock and round_count < max_rounds:
+            round_count += 1
+            placed_this_round = 0
+            
+            # 为每种库存板材尝试放置
+            for stock in sorted_stock:
+                # 检查适配度
+                if packer.fitness(stock.length + self.config.blade_thickness, 
+                                stock.width + self.config.blade_thickness) is not None:
+                    if packer.add_rect(stock):
+                        placed_this_round += 1
+                        # 继续尝试放置同样的板材
+                        while packer.add_rect(stock):
+                            placed_this_round += 1
+            
+            # 如果这轮没有放置任何板材，结束
+            if placed_this_round == 0:
+                break
+            
+            logger.debug(f"第{round_count}轮填充了{placed_this_round}块库存板材")
         
         # 更新库存切割的 plate_id
         for cut in packer.cuts:
-            cut.plate.plate_id = f"{cut.plate.plate_id}"
-            stock_cuts.append(cut)
+            if not cut.plate.plate_id:
+                cut.plate.plate_id = f"STOCK_{len(packer.cuts)}"
         
-        return stock_cuts
-    
-    def _remove_occupied_area(self, free_rects: List[Tuple], x: int, y: int, w: int, h: int) -> List[Tuple]:
-        """从空闲矩形列表中移除已占用区域"""
-        new_rects = []
+        # 记录最终利用率
+        utilization = packer.get_utilization()
+        logger.debug(f"库存填充完成，总利用率: {utilization:.2%}，放置了{len(packer.cuts)}块库存板材")
         
-        for fx, fy, fw, fh in free_rects:
-            # 检查是否有重叠
-            if not (x >= fx + fw or x + w <= fx or y >= fy + fh or y + h <= fy):
-                # 有重叠，需要分割
-                # 左侧
-                if fx < x:
-                    new_rects.append((fx, fy, x - fx, fh))
-                # 右侧
-                if x + w < fx + fw:
-                    new_rects.append((x + w, fy, fx + fw - x - w, fh))
-                # 下方
-                if fy < y:
-                    new_rects.append((fx, fy, fw, y - fy))
-                # 上方
-                if y + h < fy + fh:
-                    new_rects.append((fx, y + h, fw, fy + fh - y - h))
-            else:
-                # 无重叠，保留原矩形
-                new_rects.append((fx, fy, fw, fh))
-        
-        return new_rects
+        return packer.cuts
 
 
 class DataConverter:
@@ -471,57 +902,39 @@ def calculate_cutting_metrics(results: List[Dict[str, Any]], remaining_orders: i
     }
 
 
-def compare_algorithms(metrics1: Dict[str, Any], metrics2: Dict[str, Any]) -> int:
+def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]], 
+                    others: List[Dict[str, Any]] = None, optim: int = 0, 
+                    saw_blade: int = 4, algorithm: str = "auto", 
+                    stock_algorithm: str = "guillotine") -> List[Dict[str, Any]]:
     """
-    比较两个算法的优劣
+    主优化函数
+    
+    Args:
+        plates: 大板信息列表
+        orders: 订单信息列表  
+        others: 库存余料列表
+        optim: 是否启用库存优化（仅影响库存板）
+        saw_blade: 锯片厚度
+        algorithm: 订单算法选择
+            - "MaxRectsBaf": MaxRects Best Area Fit
+            - "GuillotineBafMinas": Guillotine Best Area Fit with Minimal Area Split
+            - "SkylineMwfWm": Skyline Minimal Waste Fit with Merge
+            - "auto": 自动优化模式（默认）- 尝试三种算法，选择最优
+        stock_algorithm: 库存填充算法选择
+            - "maxrects": 使用MaxRects BAF算法（默认）
+            - "guillotine": 使用Guillotine BAF MINAS算法
     
     Returns:
-        -1: metrics1 更优
-         0: 相同
-         1: metrics2 更优
+        切割方案列表
     """
-    # 1. 首先比较使用板材数量（越少越好）
-    if metrics1['used_plates'] < metrics2['used_plates']:
-        return -1
-    elif metrics1['used_plates'] > metrics2['used_plates']:
-        return 1
     
-    # 2. 板材数量相同，比较总体利用率（越高越好）
-    rate_diff = abs(metrics1['overall_rate'] - metrics2['overall_rate'])
-    if rate_diff > 0.001:  # 利用率差异大于0.1%
-        return -1 if metrics1['overall_rate'] > metrics2['overall_rate'] else 1
+    # 定义可用算法映射
+    ALGORITHMS = {
+        "MaxRectsBaf": rectpack.MaxRectsBaf,
+        "GuillotineBafMinas": rectpack.GuillotineBafMinas,
+        "SkylineMwfWm": rectpack.SkylineMwfWm,
+    }
     
-    # 3. 利用率相近，比较最小利用率（避免某块板材利用率特别低）
-    min_rate_diff = abs(metrics1['min_rate'] - metrics2['min_rate'])
-    if min_rate_diff > 0.01:  # 差异大于1%
-        return -1 if metrics1['min_rate'] > metrics2['min_rate'] else 1
-    
-    # 4. 比较利用率方差（越小越好，表示各板材利用率更均匀）
-    variance_diff = abs(metrics1['rate_variance'] - metrics2['rate_variance'])
-    if variance_diff > 0.0001:
-        return -1 if metrics1['rate_variance'] < metrics2['rate_variance'] else 1
-    
-    # 5. 比较切割复杂度（切割次数越少越好，降低加工成本）
-    if metrics1['avg_cuts_per_plate'] != metrics2['avg_cuts_per_plate']:
-        return -1 if metrics1['avg_cuts_per_plate'] < metrics2['avg_cuts_per_plate'] else 1
-    
-    # 6. 比较最大单板切割数（越小越好，降低单板加工复杂度）
-    if metrics1['max_cuts_single_plate'] != metrics2['max_cuts_single_plate']:
-        return -1 if metrics1['max_cuts_single_plate'] < metrics2['max_cuts_single_plate'] else 1
-    
-    # 7. 如果所有指标都相同，返回相等
-    return 0
-
-
-def run_single_algorithm(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]], 
-                        others: List[Dict[str, Any]], optim: int, saw_blade: int,
-                        algorithm) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    运行单个算法的切割方案
-    
-    Returns:
-        (切割方案列表, 评价指标字典)
-    """
     # 配置
     config = CuttingConfig(blade_thickness=saw_blade)
     
@@ -532,11 +945,73 @@ def run_single_algorithm(plates: List[Dict[str, Any]], orders: List[Dict[str, An
     stock_plates = converter.convert_stock(others) if others else []
     
     if not big_plates:
-        return [], calculate_cutting_metrics([], len(small_plates))
+        return []
+    
+    # 选择订单处理算法
+    if algorithm == "auto":
+        # 自动优化模式：尝试所有算法，选择最优
+        logger.info(f"使用自动优化模式，测试多种算法...")
+        best_algorithm = None
+        best_results = None
+        best_remaining = small_plates
+        
+        for algo_name, algo_class in ALGORITHMS.items():
+            logger.info(f"测试算法: {algo_name}")
+            temp_results = []
+            temp_remaining = small_plates.copy()
+            
+            plate_optimizer = PlateOptimizer(config, algo_class)
+            stock_optimizer = StockOptimizer(config, stock_algorithm)
+            
+            for big_plate in big_plates:
+                if not temp_remaining:
+                    break
+                    
+                order_cuts, temp_remaining = plate_optimizer.pack_orders(big_plate, temp_remaining)
+                
+                if order_cuts:
+                    stock_cuts = []
+                    if stock_plates:
+                        stock_cuts = stock_optimizer.fill_with_stock(
+                            big_plate.length, big_plate.width, 
+                            order_cuts, stock_plates, 
+                            optimize=bool(optim)
+                        )
+                    
+                    all_cuts = order_cuts + stock_cuts
+                    result = converter.convert_cuts_to_output(big_plate, all_cuts)
+                    temp_results.append(result)
+            
+            metrics = calculate_cutting_metrics(temp_results, len(temp_remaining))
+            logger.info(f"  - 使用板材: {metrics['used_plates']} 块")
+            logger.info(f"  - 平均利用率: {metrics['overall_rate']:.2%}")
+            logger.info(f"  - 剩余订单: {metrics['remaining_orders']} 个")
+            
+            if best_results is None or metrics['overall_rate'] > calculate_cutting_metrics(best_results, len(best_remaining))['overall_rate']:
+                best_algorithm = algo_class
+                best_results = temp_results
+                best_remaining = temp_remaining
+                logger.info(f"  选择 {algo_name} 作为最优算法")
+        
+        return best_results
+        
+    elif algorithm in ALGORITHMS:
+        # 使用指定算法
+        order_algorithm = ALGORITHMS[algorithm]
+    else:
+        # 默认算法
+        logger.warning(f"未知算法 '{algorithm}'，使用默认算法 MaxRectsBaf")
+        order_algorithm = rectpack.MaxRectsBaf
     
     # 创建优化器
-    plate_optimizer = PlateOptimizer(config, algorithm)
-    stock_optimizer = StockOptimizer(config)
+    plate_optimizer = PlateOptimizer(config, order_algorithm)
+    stock_optimizer = StockOptimizer(config, stock_algorithm)
+    
+    # 记录使用的算法
+    if stock_algorithm == "guillotine":
+        logger.info(f"订单处理: {algorithm}, 库存填充: Guillotine BAF MINAS")
+    else:
+        logger.info(f"订单处理: {algorithm}, 库存填充: MaxRects BAF")
     
     # 主切割循环
     results = []
@@ -566,122 +1041,14 @@ def run_single_algorithm(plates: List[Dict[str, Any]], orders: List[Dict[str, An
             result = converter.convert_cuts_to_output(big_plate, all_cuts)
             results.append(result)
     
-    # 计算详细指标
+    # 计算并显示最终指标
     metrics = calculate_cutting_metrics(results, len(remaining_orders))
+    logger.info(f"完成切割:")
+    logger.info(f"  - 使用板材: {metrics['used_plates']} 块")
+    logger.info(f"  - 平均利用率: {metrics['overall_rate']:.2%}")
+    logger.info(f"  - 平均切割数: {metrics['avg_cuts_per_plate']:.1f} 次/板")
     
-    return results, metrics
-
-
-def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]], 
-                    others: List[Dict[str, Any]] = None, optim: int = 0, 
-                    saw_blade: int = 4, algorithm: str = "auto") -> List[Dict[str, Any]]:
-    """
-    主优化函数
-    
-    Args:
-        plates: 大板信息列表
-        orders: 订单信息列表  
-        others: 库存余料列表
-        optim: 是否启用库存优化（仅影响库存板）
-        saw_blade: 锯片厚度
-        algorithm: 算法选择
-            - "MaxRectsBaf": MaxRects Best Area Fit
-            - "GuillotineBafMinas": Guillotine Best Area Fit with Minimal Area Split
-            - "SkylineMwfWm": Skyline Minimal Waste Fit with Merge
-            - "auto": 自动优化模式（默认）- 尝试三种算法，选择最优
-    
-    Returns:
-        切割方案列表
-    """
-    
-    # 定义可用算法映射
-    ALGORITHMS = {
-        "MaxRectsBaf": rectpack.MaxRectsBaf,
-        "GuillotineBafMinas": rectpack.GuillotineBafMinas,
-        "SkylineMwfWm": rectpack.SkylineMwfWm,
-    }
-    
-    if algorithm == "auto":
-        # 自动优化模式：尝试所有算法，选择最优
-        logger.info("使用自动优化模式，测试多种算法...")
-        
-        best_results = None
-        best_metrics = None
-        best_algorithm_name = None
-        
-        algorithm_results = []
-        
-        for algo_name, algo_class in ALGORITHMS.items():
-            logger.info(f"测试算法: {algo_name}")
-            
-            results, metrics = run_single_algorithm(
-                plates, orders, others, optim, saw_blade, algo_class
-            )
-            
-            algorithm_results.append((algo_name, results, metrics))
-            
-            # 详细日志
-            logger.info(f"  {algo_name} 结果:")
-            logger.info(f"    - 使用板材: {metrics['used_plates']} 块")
-            logger.info(f"    - 平均利用率: {metrics['overall_rate']:.2%}")
-            logger.info(f"    - 最低利用率: {metrics['min_rate']:.2%}")
-            logger.info(f"    - 利用率方差: {metrics['rate_variance']:.4f}")
-            logger.info(f"    - 平均切割数: {metrics['avg_cuts_per_plate']:.1f} 次/板")
-            logger.info(f"    - 最大单板切割: {metrics['max_cuts_single_plate']} 次")
-            logger.info(f"    - 剩余订单: {metrics['remaining_orders']} 个")
-            
-            # 比较选择最优
-            if best_metrics is None:
-                best_results = results
-                best_metrics = metrics
-                best_algorithm_name = algo_name
-            else:
-                comparison = compare_algorithms(metrics, best_metrics)
-                if comparison < 0:
-                    best_results = results
-                    best_metrics = metrics
-                    best_algorithm_name = algo_name
-        
-        # 输出最终选择理由
-        logger.info(f"\n最优算法: {best_algorithm_name}")
-        logger.info(f"选择理由:")
-        
-        # 分析为什么选择这个算法
-        for algo_name, _, metrics in algorithm_results:
-            if algo_name != best_algorithm_name:
-                comparison = compare_algorithms(best_metrics, metrics)
-                if best_metrics['used_plates'] < metrics['used_plates']:
-                    logger.info(f"  - 比 {algo_name} 少用 {metrics['used_plates'] - best_metrics['used_plates']} 块板")
-                elif best_metrics['overall_rate'] > metrics['overall_rate']:
-                    logger.info(f"  - 比 {algo_name} 利用率高 {(best_metrics['overall_rate'] - metrics['overall_rate'])*100:.2f}%")
-                elif best_metrics['min_rate'] > metrics['min_rate']:
-                    logger.info(f"  - 比 {algo_name} 最低利用率高 {(best_metrics['min_rate'] - metrics['min_rate'])*100:.2f}%")
-                elif best_metrics['rate_variance'] < metrics['rate_variance']:
-                    logger.info(f"  - 比 {algo_name} 利用率更均匀（方差小 {metrics['rate_variance'] - best_metrics['rate_variance']:.4f}）")
-                elif best_metrics['avg_cuts_per_plate'] < metrics['avg_cuts_per_plate']:
-                    logger.info(f"  - 比 {algo_name} 切割更简单（平均少 {metrics['avg_cuts_per_plate'] - best_metrics['avg_cuts_per_plate']:.1f} 次/板）")
-        
-        return best_results
-        
-    elif algorithm in ALGORITHMS:
-        # 使用指定算法
-        logger.info(f"使用算法: {algorithm}")
-        results, metrics = run_single_algorithm(
-            plates, orders, others, optim, saw_blade, ALGORITHMS[algorithm]
-        )
-        logger.info(f"完成切割:")
-        logger.info(f"  - 使用板材: {metrics['used_plates']} 块")
-        logger.info(f"  - 平均利用率: {metrics['overall_rate']:.2%}")
-        logger.info(f"  - 平均切割数: {metrics['avg_cuts_per_plate']:.1f} 次/板")
-        return results
-        
-    else:
-        # 无效算法名称，使用默认算法
-        logger.warning(f"未知算法 '{algorithm}'，使用默认算法 MaxRectsBssf")
-        results, metrics = run_single_algorithm(
-            plates, orders, others, optim, saw_blade, rectpack.MaxRectsBssf
-        )
-        return results
+    return results
 
 
 # 使用示例
@@ -702,10 +1069,44 @@ if __name__ == "__main__":
         {"id": "R002", "length": 300, "width": 200},
     ]
     
-    # 使用自动优化模式
-    results_auto = optimize_cutting(plates, orders, others, optim=1, algorithm="auto")
-    print(f"自动优化模式: 生成 {len(results_auto)} 个切割方案")
+    print("=== 测试不同的库存填充算法 ===\n")
     
-    # 使用指定算法
-    results_maxrects = optimize_cutting(plates, orders, others, optim=1, algorithm="MaxRectsBaf")
-    print(f"MaxRectsBaf: 生成 {len(results_maxrects)} 个切割方案")
+    # 使用MaxRects BAF算法填充库存
+    print("1. MaxRects BAF 填充库存:")
+    results_maxrects = optimize_cutting(
+        plates, orders, others, 
+        optim=1, 
+        algorithm="MaxRectsBaf",
+        stock_algorithm="maxrects"
+    )
+    print(f"   生成 {len(results_maxrects)} 个切割方案\n")
+    
+    # 使用Guillotine BAF MINAS算法填充库存
+    print("2. Guillotine BAF MINAS 填充库存:")
+    results_guillotine = optimize_cutting(
+        plates, orders, others,
+        optim=1,
+        algorithm="MaxRectsBaf", 
+        stock_algorithm="guillotine"
+    )
+    print(f"   生成 {len(results_guillotine)} 个切割方案\n")
+    
+    # 自动模式
+    print("3. 自动优化模式（订单）+ MaxRects BAF（库存）:")
+    results_auto = optimize_cutting(
+        plates, orders, others,
+        optim=1,
+        algorithm="auto",
+        stock_algorithm="maxrects"
+    )
+    print(f"   生成 {len(results_auto)} 个切割方案\n")
+    
+    # 自动模式 + Guillotine
+    print("4. 自动优化模式（订单）+ Guillotine BAF MINAS（库存）:")
+    results_auto_g = optimize_cutting(
+        plates, orders, others,
+        optim=1,
+        algorithm="auto",
+        stock_algorithm="guillotine"
+    )
+    print(f"   生成 {len(results_auto_g)} 个切割方案")
