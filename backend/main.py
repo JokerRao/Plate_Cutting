@@ -330,8 +330,8 @@ class MaxRectsBafPacker(BaseStockPacker):
         return self._rect_fitness_baf(max_rect, rect.width, rect.height)
 
 
-class GuillotineBafMinasPacker(BaseStockPacker):
-    """自定义Guillotine BAF + MINAS算法实现"""
+class GuillotineBssfLlasPacker(BaseStockPacker):
+    """自定义Guillotine BSSF + LLAS算法实现"""
     
     def __init__(self, width: int, height: int, config: CuttingConfig):
         self._merge = True  # 启用区域合并（必须在super().__init__之前设置）
@@ -387,23 +387,26 @@ class GuillotineBafMinasPacker(BaseStockPacker):
         
         return False
     
-    def _section_fitness_baf(self, section: Rectangle, width: int, height: int) -> Optional[float]:
-        """Best Area Fit 适配度计算"""
+    def _section_fitness_bssf(self, section: Rectangle, width: int, height: int) -> Optional[float]:
+        """Best Short Side Fit (BSSF) 适配度计算
+        选择短边剩余空间最小的区域，最小化短边浪费
+        """
         if width > section.width or height > section.height:
             return None
-        # 返回剩余面积（越小越好）
-        return section.width * section.height - width * height
+        # 返回短边的剩余空间（越小越好）
+        return min(section.width - width, section.height - height)
     
-    def _split_minas(self, section: Rectangle, width: int, height: int):
+    def _split_llas(self, section: Rectangle, width: int, height: int):
         """
-        Min Area Axis Split (MINAS) 分割策略
-        选择产生最小剩余面积的分割方式
+        Long Leftover Axis Split (LLAS) 分割策略
+        选择产生较长剩余边的分割方式
         """
-        # 计算两种分割方式产生的剩余面积
-        horizontal_waste = width * (section.height - height)
-        vertical_waste = height * (section.width - width)
+        # 计算两个方向的剩余长度
+        leftover_horizontal = section.width - width    # 水平分割后的剩余宽度
+        leftover_vertical = section.height - height    # 垂直分割后的剩余高度
         
-        if horizontal_waste >= vertical_waste:
+        # 选择剩余边较长的分割方式
+        if leftover_horizontal >= leftover_vertical:
             self._split_horizontal(section, width, height)
         else:
             self._split_vertical(section, width, height)
@@ -448,7 +451,7 @@ class GuillotineBafMinasPacker(BaseStockPacker):
         
         # 尝试正常方向
         for section in self._sections:
-            fitness = self._section_fitness_baf(section, w, h)
+            fitness = self._section_fitness_bssf(section, w, h)
             if fitness is not None:
                 if best_fitness is None or fitness < best_fitness:
                     best_fitness = fitness
@@ -458,7 +461,7 @@ class GuillotineBafMinasPacker(BaseStockPacker):
         # 尝试旋转方向
         if self.rot:
             for section in self._sections:
-                fitness = self._section_fitness_baf(section, h, w)
+                fitness = self._section_fitness_bssf(section, h, w)
                 if fitness is not None:
                     if best_fitness is None or fitness < best_fitness:
                         best_fitness = fitness
@@ -484,8 +487,8 @@ class GuillotineBafMinasPacker(BaseStockPacker):
         # 移除选中的区域
         self._sections.remove(section)
         
-        # 执行MINAS分割
-        self._split_minas(section, needed_width, needed_height)
+        # 执行LLAS分割
+        self._split_llas(section, needed_width, needed_height)
         
         # 创建实际放置的矩形（不包含锯片厚度）
         actual_width = plate.length
@@ -519,9 +522,9 @@ class GuillotineBafMinasPacker(BaseStockPacker):
             return None
         
         if rotated:
-            return self._section_fitness_baf(section, height, width)
+            return self._section_fitness_bssf(section, height, width)
         else:
-            return self._section_fitness_baf(section, width, height)
+            return self._section_fitness_bssf(section, width, height)
 
 
 # ============================================================================
@@ -640,7 +643,7 @@ class PlateOptimizer:
 
 
 class StockOptimizer:
-    """库存板材优化器 - 支持 MaxRects BAF 和 Guillotine BAF+MINAS 算法"""
+    """库存板材优化器 - 支持 MaxRects BAF 和 Guillotine BSSF + LLAS 算法"""
     
     def __init__(self, config: CuttingConfig, algorithm: str = "maxrects_baf"):
         """
@@ -648,15 +651,15 @@ class StockOptimizer:
             config: 切割配置
             algorithm: 算法选择
                 - "maxrects_baf": MaxRects Best Area Fit（默认）
-                - "guillotine_baf_minas": Guillotine BAF + Min Area Split
+                - "guillotine_bssf_llas": Guillotine BSSF + Long Leftover Axis Split
         """
         self.config = config
         self.algorithm = algorithm.lower()
     
     def _create_packer(self, width: int, height: int) -> BaseStockPacker:
         """根据算法选择创建相应的装箱器"""
-        if self.algorithm == "guillotine_baf_minas":
-            return GuillotineBafMinasPacker(width, height, self.config)
+        if self.algorithm == "guillotine_bssf_llas":
+            return GuillotineBssfLlasPacker(width, height, self.config)
         else:  # 默认使用 maxrects_baf
             return MaxRectsBafPacker(width, height, self.config)
     
@@ -689,7 +692,7 @@ class StockOptimizer:
                     )
                     packer._split(occupied_rect)
                     packer._remove_duplicates()
-            elif isinstance(packer, GuillotineBafMinasPacker):
+            elif isinstance(packer, GuillotineBssfLlasPacker):
                 self._update_guillotine_sections(packer, existing_cuts)
             
             # 尝试多轮填充以最大化利用率
@@ -804,7 +807,7 @@ class StockOptimizer:
                     continue
             
             # 输出最优结果信息
-            algorithm_name = "Guillotine BAF+MINAS" if self.algorithm == "guillotine_baf_minas" else "MaxRects BAF"
+            algorithm_name = "Guillotine BSSF + LLAS" if self.algorithm == "guillotine_bssf_llas" else "MaxRects BAF"
             logger.info(f"库存填充完成（{algorithm_name}）")
             logger.info(f"最优排列: {best_arrangement}")
             logger.info(f"总利用率: {best_utilization:.2%}")
@@ -825,12 +828,12 @@ class StockOptimizer:
             logger.debug("使用原始顺序填充库存")
             cuts, utilization = _try_stock_arrangement(stock_plates)
             
-            algorithm_name = "Guillotine BAF+MINAS" if self.algorithm == "guillotine_baf_minas" else "MaxRects BAF"
+            algorithm_name = "Guillotine BSSF + LLAS" if self.algorithm == "guillotine_bssf_llas" else "MaxRects BAF"
             logger.debug(f"库存填充完成（{algorithm_name}），利用率: {utilization:.2%}，放置了{len(cuts)}块库存板材")
             
             return cuts
     
-    def _update_guillotine_sections(self, packer: GuillotineBafMinasPacker, existing_cuts: List[Cut]):
+    def _update_guillotine_sections(self, packer: GuillotineBssfLlasPacker, existing_cuts: List[Cut]):
         """更新Guillotine算法的空闲区域，排除已占用部分"""
         # 简化实现：重新计算空闲区域
         # 这里可以实现更复杂的算法来精确计算剩余空闲区域
@@ -1135,7 +1138,7 @@ def run_single_algorithm(plates: List[Dict[str, Any]], orders: List[Dict[str, An
     Args:
         stock_algorithm: 库存填充算法
             - "maxrects_baf": MaxRects Best Area Fit（默认）
-            - "guillotine_baf_minas": Guillotine BAF + Min Area Split
+            - "guillotine_bssf_llas": "Guillotine BSSF+LLAS"
     
     Returns:
         (切割方案列表, 评价指标字典)
@@ -1193,7 +1196,7 @@ def run_single_algorithm(plates: List[Dict[str, Any]], orders: List[Dict[str, An
 def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]], 
                     others: List[Dict[str, Any]] = None, optim: int = 0, 
                     saw_blade: int = 4, algorithm: str = "auto",
-                    stock_algorithm: str = "guillotine_baf_minas") -> List[Dict[str, Any]]:
+                    stock_algorithm: str = "maxrects_baf") -> List[Dict[str, Any]]:
     """
     主优化函数
     
@@ -1210,7 +1213,7 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
             - "auto": 自动优化模式（默认）- 尝试三种算法，选择最优
         stock_algorithm: 库存填充算法
             - "maxrects_baf": MaxRects Best Area Fit（默认）
-            - "guillotine_baf_minas": Guillotine BAF + Min Area Split
+            - "guillotine_bssf_llas": "Guillotine BSSF+LLAS"
     
     Returns:
         切割方案列表
@@ -1218,16 +1221,16 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
     
     # 定义可用算法映射
     ALGORITHMS = {
-        "MaxRectsBaf": rectpack.MaxRectsBaf,
-        "GuillotineBafMinas": rectpack.GuillotineBafMinas,
-        "SkylineMwfWm": rectpack.SkylineMwfWm,
+        # "MaxRectsBaf": rectpack.MaxRectsBaf,
+        # "GuillotineBafMinas": rectpack.GuillotineBafMinas,
+        # "SkylineMwfWm": rectpack.SkylineMwfWm,
         "GuillotineBssfLlas": rectpack.GuillotineBssfLlas,
     }
     
     # 定义库存算法名称映射
     STOCK_ALGORITHMS = {
         "maxrects_baf": "MaxRects BAF",
-        "guillotine_baf_minas": "Guillotine BAF+MINAS"
+        "guillotine_bssf_llas": "Guillotine BSSF+LLAS"
     }
     
     if algorithm == "auto":
@@ -1344,10 +1347,10 @@ if __name__ == "__main__":
                                    algorithm="auto", stock_algorithm="maxrects_baf")
     print(f"   生成 {len(results_auto)} 个切割方案\n")
     
-    # 2. 使用自动优化模式 + Guillotine BAF+MINAS库存算法
-    print("2. 自动优化模式 + Guillotine BAF+MINAS库存算法:")
+    # 2. 使用自动优化模式 + Guillotine BSSF + LLAS库存算法
+    print("2. 自动优化模式 + Guillotine BSSF + LLAS库存算法:")
     results_guillotine = optimize_cutting(plates, orders, others, optim=1, 
-                                         algorithm="auto", stock_algorithm="guillotine_baf_minas")
+                                         algorithm="auto", stock_algorithm="guillotine_bssf_llas")
     print(f"   生成 {len(results_guillotine)} 个切割方案\n")
     
     # 3. 使用MaxRects BAF主算法 + MaxRects BAF库存算法
@@ -1356,13 +1359,13 @@ if __name__ == "__main__":
                                        algorithm="MaxRectsBaf", stock_algorithm="maxrects_baf")
     print(f"   生成 {len(results_maxrects)} 个切割方案\n")
     
-    # 4. 使用MaxRects BAF主算法 + Guillotine BAF+MINAS库存算法
-    print("4. MaxRects BAF主算法 + Guillotine BAF+MINAS库存算法:")
+    # 4. 使用MaxRects BAF主算法 + Guillotine BSSF + LLAS库存算法
+    print("4. MaxRects BAF主算法 + Guillotine BSSF + LLAS库存算法:")
     results_mixed = optimize_cutting(plates, orders, others, optim=1, 
-                                    algorithm="MaxRectsBaf", stock_algorithm="guillotine_baf_minas")
+                                    algorithm="MaxRectsBaf", stock_algorithm="guillotine_bssf_llas")
     print(f"   生成 {len(results_mixed)} 个切割方案\n")
     
     # 显示库存算法说明
     print("=== 库存填充算法说明 ===")
     print("MaxRects BAF: 使用最大矩形算法，选择面积最小的可用区域")
-    print("Guillotine BAF+MINAS: 使用切割线算法，采用最小面积分割策略")
+    print("Guillotine BSSF + LLAS: 使用切割线算法，采用短边最佳适配和长剩余边分割策略")
