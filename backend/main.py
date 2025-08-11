@@ -557,15 +557,36 @@ class PlateOptimizer:
     def pack_orders(self, big_plate: SmallPlate, orders: List[SmallPlate]) -> Tuple[List[Cut], List[SmallPlate]]:
         """使用 rectpack 装箱订单板材"""
         packer = self.create_packer(big_plate.length, big_plate.width)
-        
+
+        bt = self.config.blade_thickness
+        # 加锯片厚度后的大板尺寸
+        length0 = big_plate.length
+        width0 = big_plate.width
+
         # 添加所有订单矩形
         for i, order in enumerate(orders):
-            # 考虑锯片厚度
-            packer.add_rect(
-                order.length + self.config.blade_thickness,
-                order.width + self.config.blade_thickness,
-                rid=i  # 使用索引作为ID
+            # 加锯片厚度后的订单板尺寸
+            x1 = order.length + bt
+            x2 = order.width + bt
+
+            # 第一种旋转条件
+            cond1 = (
+                x1 < x2 and
+                (length0 // x2) * (width0 // x1) >= (length0 // x1) * (width0 // x2)
             )
+
+            # 第二种旋转条件
+            cond2 = (
+                abs(x1 - x2) / max(x1, x2) < 0.56 and
+                (length0 // x2) * (width0 // x1) > (length0 // x1) * (width0 // x2)
+            )
+
+            rotate = cond1 or cond2
+
+            if rotate:
+                packer.add_rect(x2, x1, rid=i)  # 旋转后加入
+            else:
+                packer.add_rect(x1, x2, rid=i)  # 原方向加入
         
         # 执行装箱
         packer.pack()
@@ -1032,8 +1053,10 @@ def calculate_cutting_metrics(results: List[Dict[str, Any]], remaining_orders: i
         return {
             'used_plates': 0,
             'overall_rate': 0,
+            'last_rate': 0,
             'avg_rate': 0,
             'min_rate': 0,
+            'max_rate': 0,
             'rate_variance': 0,
             'total_cuts': 0,
             'avg_cuts_per_plate': 0,
@@ -1045,6 +1068,9 @@ def calculate_cutting_metrics(results: List[Dict[str, Any]], remaining_orders: i
     used_plates = len(results)
     rates = [r['rate'] for r in results]
     overall_rate = sum(rates) / used_plates if used_plates > 0 else 0
+
+    # 最后一张板的使用率
+    last_rate = rates[-1]
     
     # 利用率分布统计
     min_rate = min(rates) if rates else 0
@@ -1071,6 +1097,7 @@ def calculate_cutting_metrics(results: List[Dict[str, Any]], remaining_orders: i
     return {
         'used_plates': used_plates,
         'overall_rate': overall_rate,
+        'last_rate': last_rate,
         'avg_rate': avg_rate,
         'min_rate': min_rate,
         'max_rate': max_rate,
@@ -1098,28 +1125,24 @@ def compare_algorithms(metrics1: Dict[str, Any], metrics2: Dict[str, Any]) -> in
     elif metrics1['used_plates'] > metrics2['used_plates']:
         return 1
     
-    # # 2. 板材数量相同，比较总体利用率（越高越好）
-    # rate_diff = abs(metrics1['overall_rate'] - metrics2['overall_rate'])
-    # if rate_diff > 0.001:  # 利用率差异大于0.1%
-    #     return -1 if metrics1['overall_rate'] > metrics2['overall_rate'] else 1
+    # 2. 最后一张板的利用率（越低越好）
+    cut_diff = abs(metrics1['last_rate'] - metrics2['last_rate'])
+    if cut_diff > 0.001:  # 利用率差异大于0.1%
+        return -1 if metrics1['last_rate'] < metrics2['last_rate'] else 1
     
-    # # 3. 利用率相近，比较最小利用率（避免某块板材利用率特别低）
-    # min_rate_diff = abs(metrics1['min_rate'] - metrics2['min_rate'])
-    # if min_rate_diff > 0.01:  # 差异大于1%
-    #     return -1 if metrics1['min_rate'] > metrics2['min_rate'] else 1
+    # 3. 利用率相近，比较最大利用率，越大越好
+    max_rate_diff = abs(metrics1['max_rate'] - metrics2['max_rate'])
+    if max_rate_diff > 0.01:  # 差异大于1%
+        return -1 if metrics1['max_rate'] > metrics2['max_rate'] else 1
     
     # # 4. 比较利用率方差（越小越好，表示各板材利用率更均匀）
     # variance_diff = abs(metrics1['rate_variance'] - metrics2['rate_variance'])
     # if variance_diff > 0.0001:
     #     return -1 if metrics1['rate_variance'] < metrics2['rate_variance'] else 1
 
-    # 5. 比较最大单板切割数（越大越好，能放更多板）
-    if metrics1['max_cuts_single_plate'] != metrics2['max_cuts_single_plate']:
-        return -1 if metrics1['max_cuts_single_plate'] > metrics2['max_cuts_single_plate'] else 1
-    
-    # 6. 比较切割复杂度（切割次数越少越好，降低加工成本）
-    if metrics1['avg_cuts_per_plate'] != metrics2['avg_cuts_per_plate']:
-        return -1 if metrics1['avg_cuts_per_plate'] < metrics2['avg_cuts_per_plate'] else 1
+    # # 5. 比较最大单板切割数（越大越好，能放更多板）
+    # if metrics1['max_cuts_single_plate'] != metrics2['max_cuts_single_plate']:
+    #     return -1 if metrics1['max_cuts_single_plate'] > metrics2['max_cuts_single_plate'] else 1
     
     # 7. 如果所有指标都相同，返回相等
     return 0
@@ -1145,10 +1168,17 @@ def run_single_algorithm(plates: List[Dict[str, Any]], orders: List[Dict[str, An
     """
     # 配置
     config = CuttingConfig(blade_thickness=saw_blade)
+    plates0 = [{**plate} for plate in plates]
+
+    for plate_data in plates0:
+        quantity = plate_data.get('quantity', 0)
+        if quantity > 0:
+            plate_data['length'] += config.blade_thickness
+            plate_data['width'] += config.blade_thickness
     
     # 数据转换
     converter = DataConverter()
-    big_plates = converter.convert_plates(plates)
+    big_plates = converter.convert_plates(plates0)
     small_plates = converter.convert_orders(orders)
     stock_plates = converter.convert_stock(others) if others else []
     
@@ -1184,6 +1214,8 @@ def run_single_algorithm(plates: List[Dict[str, Any]], orders: List[Dict[str, An
             all_cuts = order_cuts + stock_cuts
             
             # 转换为输出格式
+            big_plate.length = big_plate.length - config.blade_thickness
+            big_plate.width = big_plate.width - config.blade_thickness
             result = converter.convert_cuts_to_output(big_plate, all_cuts)
             results.append(result)
     
@@ -1221,11 +1253,44 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
     
     # 定义可用算法映射
     ALGORITHMS = {
-        # "MaxRectsBaf": rectpack.MaxRectsBaf,
-        # "GuillotineBafMinas": rectpack.GuillotineBafMinas,
-        # "SkylineMwfWm": rectpack.SkylineMwfWm,
         "GuillotineBssfLlas": rectpack.GuillotineBssfLlas,
-    }
+        "GuillotineBssfSlas": rectpack.GuillotineBssfSlas,
+        "GuillotineBlsfLlas": rectpack.GuillotineBlsfLlas,
+        "GuillotineBlsfSlas": rectpack.GuillotineBlsfSlas,
+        "GuillotineBafMinas": rectpack.GuillotineBafMinas,
+        "GuillotineBssfMinas": rectpack.GuillotineBssfMinas,
+        "GuillotineBlsfMaxas": rectpack.GuillotineBlsfMaxas,
+        "MaxRectsBaf": rectpack.MaxRectsBaf,
+        "SkylineMwfWm": rectpack.SkylineMwfWm,
+        # "GuillotineBssfSas": rectpack.GuillotineBssfSas,
+        # "GuillotineBssfLas": rectpack.GuillotineBssfLas,
+        # "GuillotineBssfSlas": rectpack.GuillotineBssfSlas,
+        # "GuillotineBssfLlas": rectpack.GuillotineBssfLlas,
+        # "GuillotineBssfMaxas": rectpack.GuillotineBssfMaxas,
+        # "GuillotineBssfMinas": rectpack.GuillotineBssfMinas,
+        # "GuillotineBlsfSas": rectpack.GuillotineBlsfSas,
+        # "GuillotineBlsfLas": rectpack.GuillotineBlsfLas,
+        # "GuillotineBlsfSlas": rectpack.GuillotineBlsfSlas,
+        # "GuillotineBlsfLlas": rectpack.GuillotineBlsfLlas,
+        # "GuillotineBlsfMaxas": rectpack.GuillotineBlsfMaxas,
+        # "GuillotineBlsfMinas": rectpack.GuillotineBlsfMinas,
+        # "GuillotineBafSas": rectpack.GuillotineBafSas,
+        # "GuillotineBafLas": rectpack.GuillotineBafLas,
+        # "GuillotineBafSlas": rectpack.GuillotineBafSlas,
+        # "GuillotineBafLlas": rectpack.GuillotineBafLlas,
+        # "GuillotineBafMaxas": rectpack.GuillotineBafMaxas,
+        # "GuillotineBafMinas": rectpack.GuillotineBafMinas,
+        # "SkylineBl": rectpack.SkylineBl,
+        # "SkylineBlWm": rectpack.SkylineBlWm,
+        # "SkylineMwf": rectpack.SkylineMwf,
+        # "SkylineMwfl": rectpack.SkylineMwfl,
+        # "SkylineMwfWm": rectpack.SkylineMwfWm,
+        # "SkylineMwflWm": rectpack.SkylineMwflWm,
+        # "MaxRectsBl": rectpack.MaxRectsBl,
+        # "MaxRectsBssf": rectpack.MaxRectsBssf,
+        # "MaxRectsBaf": rectpack.MaxRectsBaf,
+        # "MaxRectsBlsf": rectpack.MaxRectsBlsf,
+            }
     
     # 定义库存算法名称映射
     STOCK_ALGORITHMS = {
@@ -1285,14 +1350,10 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
                 comparison = compare_algorithms(best_metrics, metrics)
                 if best_metrics['used_plates'] < metrics['used_plates']:
                     logger.info(f"  - 比 {algo_name} 少用 {metrics['used_plates'] - best_metrics['used_plates']} 块板")
-                # elif best_metrics['overall_rate'] > metrics['overall_rate']:
-                #     logger.info(f"  - 比 {algo_name} 利用率高 {(best_metrics['overall_rate'] - metrics['overall_rate'])*100:.2f}%")
-                # elif best_metrics['min_rate'] > metrics['min_rate']:
-                #     logger.info(f"  - 比 {algo_name} 最低利用率高 {(best_metrics['min_rate'] - metrics['min_rate'])*100:.2f}%")
-                # elif best_metrics['rate_variance'] < metrics['rate_variance']:
-                #     logger.info(f"  - 比 {algo_name} 利用率更均匀（方差小 {metrics['rate_variance'] - best_metrics['rate_variance']:.4f}）")
-                elif best_metrics['avg_cuts_per_plate'] < metrics['avg_cuts_per_plate']:
-                    logger.info(f"  - 比 {algo_name} 切割更简单（平均多 {metrics['avg_cuts_per_plate'] - best_metrics['avg_cuts_per_plate']:.1f} 次/板）")
+                elif best_metrics['last_rate'] < metrics['last_rate']:
+                    logger.info(f"  - 比 {algo_name} 的最后一张板少占用 {(metrics['last_rate'] - best_metrics['last_rate'])*100:.2f}%")
+                elif best_metrics['max_rate'] > metrics['max_rate']:
+                    logger.info(f"  - 比 {algo_name} 最高利用率高 {(best_metrics['max_rate'] - metrics['max_rate'])*100:.2f}%")
         
         return best_results
         
