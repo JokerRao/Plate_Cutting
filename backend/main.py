@@ -1253,13 +1253,11 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
     
     # 定义可用算法映射
     ALGORITHMS = {
+        "GuillotineBafMinas": rectpack.GuillotineBafMinas,
         "GuillotineBssfLlas": rectpack.GuillotineBssfLlas,
         "GuillotineBssfSlas": rectpack.GuillotineBssfSlas,
         "GuillotineBlsfLlas": rectpack.GuillotineBlsfLlas,
         "GuillotineBlsfSlas": rectpack.GuillotineBlsfSlas,
-        "GuillotineBafMinas": rectpack.GuillotineBafMinas,
-        "GuillotineBssfMinas": rectpack.GuillotineBssfMinas,
-        "GuillotineBlsfMaxas": rectpack.GuillotineBlsfMaxas,
         "MaxRectsBaf": rectpack.MaxRectsBaf,
         "SkylineMwfWm": rectpack.SkylineMwfWm,
         # "GuillotineBssfSas": rectpack.GuillotineBssfSas,
