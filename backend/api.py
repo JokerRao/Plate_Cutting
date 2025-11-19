@@ -94,16 +94,16 @@ class StockPlate(PlateBase):
     client: Optional[str] = None
 
 class CutPiece(BaseModel):
-    start_x: int
-    start_y: int
-    length: int
-    width: int
+    start_x: float
+    start_y: float
+    length: float
+    width: float
     is_stock: bool
     id: Union[str, int]  # 允许字符串或整数类型的 id
 
 class CuttingPlan(BaseModel):
     rate: float = Field(..., ge=0, le=1, description="Utilization rate")
-    plate: List[int] = Field(..., min_length=2, max_length=2, description="Plate dimensions [length, width]")
+    plate: List[float] = Field(..., min_length=2, max_length=2, description="Plate dimensions [length, width]")
     cutted: List[CutPiece]
 
 class CuttingRequest(BaseModel):
@@ -111,7 +111,7 @@ class CuttingRequest(BaseModel):
     orders: List[Order]
     others: Optional[List[StockPlate]] = None
     optimization: bool = Field(False, description="Whether to optimize stock plate placement")
-    saw_blade: Optional[int] = Field(None, gt=0, description="Saw blade thickness in mm")
+    saw_blade: Optional[float] = Field(None, gt=0, description="Saw blade thickness in mm (supports decimals)")
 
 class CuttingResponse(BaseModel):
     code: int = Field(..., description="Response code, 0 for success, other values for errors")

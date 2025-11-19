@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # 默认值，可通过环境变量 LOG_FORMAT 覆盖
 
     # Default Parameters
-    DEFAULT_SAW_BLADE: int = 4  # 默认值，可通过环境变量 DEFAULT_SAW_BLADE 覆盖
+    DEFAULT_SAW_BLADE: float = 4.0  # 默认值，可通过环境变量 DEFAULT_SAW_BLADE 覆盖
     DEFAULT_TOLERANCE: int = 30  # 默认值，可通过环境变量 DEFAULT_TOLERANCE 覆盖
     DEFAULT_ATTACHMENT: int = 100  # 默认值，可通过环境变量 DEFAULT_ATTACHMENT 覆盖
     DEFAULT_RATIO: float = 0.4  # 默认值，可通过环境变量 DEFAULT_RATIO 覆盖

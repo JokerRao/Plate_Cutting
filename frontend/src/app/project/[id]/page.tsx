@@ -93,9 +93,51 @@ export default function ProjectDetailPage() {
     };
   }, [hasChanges, router]);
 
-  const validateNumber = (value: string): boolean => {
+  const validatePositiveInteger = (value: string): boolean => {
     const num = Number(value);
     return Number.isInteger(num) && num > 0;
+  };
+
+  const validatePositiveNumber = (value: string): boolean => {
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0;
+  };
+
+  const sanitizePositiveNumber = (value: string, fallback: number): number => {
+    const num = Number(value.trim());
+    return Number.isFinite(num) && num > 0 ? num : fallback;
+  };
+
+  const validateData = () => {
+    const validateArray = (arr: any[]) => {
+      return arr.every(item => 
+        validatePositiveInteger(item.length.toString()) && 
+        validatePositiveInteger(item.width.toString()) && 
+        validatePositiveInteger(item.quantity?.toString() || '1')
+      );
+    };
+
+    if (!validatePositiveNumber(sawBlade.toString())) {
+      alert('锯片宽度必须为正数（可包含小数）');
+      return false;
+    }
+
+    if (!validateArray(plates)) {
+      alert('板件信息中的长度、宽度和数量必须为正整数');
+      return false;
+    }
+
+    if (!validateArray(orders)) {
+      alert('零件信息中的长度、宽度和数量必须为正整数');
+      return false;
+    }
+
+    if (!validateArray(others)) {
+      alert('常用尺寸信息中的长度、宽度必须为正整数');
+      return false;
+    }
+
+    return true;
   };
 
   const hasUnsavedChanges = () =>
@@ -108,38 +150,6 @@ export default function ProjectDetailPage() {
     JSON.stringify(others) !== initialData?.others;
 
   const handleSave = async () => {
-    const validateData = () => {
-      const validateArray = (arr: any[]) => {
-        return arr.every(item => 
-          validateNumber(item.length.toString()) && 
-          validateNumber(item.width.toString()) && 
-          validateNumber(item.quantity?.toString() || '1')
-        );
-      };
-
-      if (!validateNumber(sawBlade.toString())) {
-        alert('锯片宽度必须为正整数');
-        return false;
-      }
-
-      if (!validateArray(plates)) {
-        alert('板件信息中的长度、宽度和数量必须为正整数');
-        return false;
-      }
-
-      if (!validateArray(orders)) {
-        alert('零件信息中的长度、宽度和数量必须为正整数');
-        return false;
-      }
-
-      if (!validateArray(others)) {
-        alert('常用尺寸信息中的长度、宽度必须为正整数');
-        return false;
-      }
-
-      return true;
-    };
-
     if (!validateData()) {
       return;
     }
@@ -407,6 +417,10 @@ export default function ProjectDetailPage() {
       return;
     }
 
+    if (!validateData()) {
+      return;
+    }
+
     if (plates.length === 0 || orders.length === 0) {
       alert('请添加板材和零件信息');
       return;
@@ -624,10 +638,10 @@ export default function ProjectDetailPage() {
                     suppressContentEditableWarning
                     onBlur={(e) => {
                       const value = e.currentTarget.textContent || '0';
-                      if (validateNumber(value)) {
-                        setSawBlade(parseInt(value));
+                      if (validatePositiveNumber(value)) {
+                        setSawBlade(parseFloat(value));
                       } else {
-                        alert('锯片宽度必须为正整数');
+                        alert('锯片宽度必须为正数（可包含小数）');
                         e.currentTarget.textContent = sawBlade.toString();
                       }
                     }}
@@ -681,13 +695,9 @@ export default function ProjectDetailPage() {
                       contentEditable
                       suppressContentEditableWarning
                       onBlur={(e) => {
-                        const value = e.currentTarget.textContent || '0';
-                        if (validateNumber(value)) {
-                          handleCellChange('plates', index, 'length', parseInt(value));
-                        } else {
-                          alert('长度必须为正整数');
-                          e.currentTarget.textContent = plate.length.toString();
-                        }
+                        const value = sanitizePositiveNumber(e.currentTarget.textContent || '0', plate.length);
+                        handleCellChange('plates', index, 'length', value);
+                        e.currentTarget.textContent = value.toString();
                       }}
                     >
                       {plate.length}
@@ -697,13 +707,9 @@ export default function ProjectDetailPage() {
                       contentEditable
                       suppressContentEditableWarning
                       onBlur={(e) => {
-                        const value = e.currentTarget.textContent || '0';
-                        if (validateNumber(value)) {
-                          handleCellChange('plates', index, 'width', parseInt(value));
-                        } else {
-                          alert('宽度必须为正整数');
-                          e.currentTarget.textContent = plate.width.toString();
-                        }
+                        const value = sanitizePositiveNumber(e.currentTarget.textContent || '0', plate.width);
+                        handleCellChange('plates', index, 'width', value);
+                        e.currentTarget.textContent = value.toString();
                       }}
                     >
                       {plate.width}
@@ -713,13 +719,9 @@ export default function ProjectDetailPage() {
                       contentEditable
                       suppressContentEditableWarning
                       onBlur={(e) => {
-                        const value = e.currentTarget.textContent || '1';
-                        if (validateNumber(value)) {
-                          handleCellChange('plates', index, 'quantity', parseInt(value));
-                        } else {
-                          alert('数量必须为正整数');
-                          e.currentTarget.textContent = plate.quantity.toString();
-                        }
+                        const value = sanitizePositiveNumber(e.currentTarget.textContent || '1', plate.quantity || 1);
+                        handleCellChange('plates', index, 'quantity', value);
+                        e.currentTarget.textContent = value.toString();
                       }}
                     >
                       {plate.quantity}
@@ -780,14 +782,10 @@ export default function ProjectDetailPage() {
                       className={editableCellClass}
                       contentEditable
                       suppressContentEditableWarning
-                      onBlur={(e) => {
-                        const value = e.currentTarget.textContent || '0';
-                        if (validateNumber(value)) {
-                          handleCellChange('orders', index, 'length', parseInt(value));
-                        } else {
-                          alert('长度必须为正整数');
-                          e.currentTarget.textContent = order.length.toString();
-                        }
+                        onBlur={(e) => {
+                        const value = sanitizePositiveNumber(e.currentTarget.textContent || '0', order.length);
+                        handleCellChange('orders', index, 'length', value);
+                        e.currentTarget.textContent = value.toString();
                       }}
                     >
                       {order.length}
@@ -796,14 +794,10 @@ export default function ProjectDetailPage() {
                       className={editableCellClass}
                       contentEditable
                       suppressContentEditableWarning
-                      onBlur={(e) => {
-                        const value = e.currentTarget.textContent || '0';
-                        if (validateNumber(value)) {
-                          handleCellChange('orders', index, 'width', parseInt(value));
-                        } else {
-                          alert('宽度必须为正整数');
-                          e.currentTarget.textContent = order.width.toString();
-                        }
+                        onBlur={(e) => {
+                        const value = sanitizePositiveNumber(e.currentTarget.textContent || '0', order.width);
+                        handleCellChange('orders', index, 'width', value);
+                        e.currentTarget.textContent = value.toString();
                       }}
                     >
                       {order.width}
@@ -812,14 +806,10 @@ export default function ProjectDetailPage() {
                       className={editableCellClass}
                       contentEditable
                       suppressContentEditableWarning
-                      onBlur={(e) => {
-                        const value = e.currentTarget.textContent || '1';
-                        if (validateNumber(value)) {
-                          handleCellChange('orders', index, 'quantity', parseInt(value));
-                        } else {
-                          alert('数量必须为正整数');
-                          e.currentTarget.textContent = order.quantity.toString();
-                        }
+                        onBlur={(e) => {
+                        const value = sanitizePositiveNumber(e.currentTarget.textContent || '1', order.quantity || 1);
+                        handleCellChange('orders', index, 'quantity', value);
+                        e.currentTarget.textContent = value.toString();
                       }}
                     >
                       {order.quantity}
@@ -900,13 +890,9 @@ export default function ProjectDetailPage() {
                                 contentEditable
                                 suppressContentEditableWarning
                                 onBlur={(e) => {
-                                  const value = e.currentTarget.textContent || '0';
-                                  if (validateNumber(value)) {
-                                    handleCellChange('others', index, 'length', parseInt(value));
-                                  } else {
-                                    alert('长度必须为正整数');
-                                    e.currentTarget.textContent = other.length.toString();
-                                  }
+                                  const value = sanitizePositiveNumber(e.currentTarget.textContent || '0', other.length);
+                                  handleCellChange('others', index, 'length', value);
+                                  e.currentTarget.textContent = value.toString();
                                 }}
                               >
                                 {other.length}
@@ -916,13 +902,9 @@ export default function ProjectDetailPage() {
                                 contentEditable
                                 suppressContentEditableWarning
                                 onBlur={(e) => {
-                                  const value = e.currentTarget.textContent || '0';
-                                  if (validateNumber(value)) {
-                                    handleCellChange('others', index, 'width', parseInt(value));
-                                  } else {
-                                    alert('宽度必须为正整数');
-                                    e.currentTarget.textContent = other.width.toString();
-                                  }
+                                  const value = sanitizePositiveNumber(e.currentTarget.textContent || '0', other.width);
+                                  handleCellChange('others', index, 'width', value);
+                                  e.currentTarget.textContent = value.toString();
                                 }}
                               >
                                 {other.width}

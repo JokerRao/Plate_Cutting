@@ -21,7 +21,7 @@ logger = logging.getLogger('plate_cutting')
 @dataclass
 class CuttingConfig:
     """切割配置参数"""
-    blade_thickness: int = 4  # 锯片厚度
+    blade_thickness: float = 4.0  # 锯片厚度
 
 
 @dataclass
@@ -41,10 +41,10 @@ class SmallPlate:
 class Cut:
     """切割记录"""
     plate: SmallPlate
-    x1: int
-    y1: int
-    x2: int
-    y2: int
+    x1: float
+    y1: float
+    x2: float
+    y2: float
     is_stock: bool = False
 
 
@@ -973,6 +973,11 @@ class StockOptimizer:
 class DataConverter:
     """数据转换器"""
     
+    def _round_dimension(self, value: float, precision: int = 1) -> float:
+        """对尺寸进行统一的四舍五入，并消除极小的浮点误差"""
+        rounded = round(value, precision)
+        return 0.0 if abs(rounded) < 10 ** (-precision) else rounded
+    
     def convert_plates(self, plates: List[Dict[str, Any]]) -> List[SmallPlate]:
         """转换大板数据"""
         result = []
@@ -1018,22 +1023,25 @@ class DataConverter:
         for cut in cuts:
             plate_id = cut.plate.plate_id
             cuts_data.append([
-                cut.x1,  # start_x
-                cut.y1,  # start_y
-                cut.x2 - cut.x1,  # length
-                cut.y2 - cut.y1,  # width
+                self._round_dimension(cut.x1),
+                self._round_dimension(cut.y1),
+                self._round_dimension(cut.x2 - cut.x1),
+                self._round_dimension(cut.y2 - cut.y1),
                 1 if cut.is_stock else 0,  # is_stock
                 plate_id  # id
             ])
         
         # 计算利用率
         used_area = sum((cut[2] * cut[3]) for cut in cuts_data)
-        total_area = big_plate.length * big_plate.width
+        total_area = self._round_dimension(big_plate.length) * self._round_dimension(big_plate.width)
         utilization_rate = used_area / total_area if total_area > 0 else 0
         
         return {
             'rate': utilization_rate,
-            'plate': [big_plate.length, big_plate.width],
+            'plate': [
+                self._round_dimension(big_plate.length),
+                self._round_dimension(big_plate.width)
+            ],
             'cutted': cuts_data
         }
 
@@ -1153,7 +1161,7 @@ def compare_algorithms(metrics1: Dict[str, Any], metrics2: Dict[str, Any]) -> in
 # ============================================================================
 
 def run_single_algorithm(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]], 
-                        others: List[Dict[str, Any]], optim: int, saw_blade: int,
+                        others: List[Dict[str, Any]], optim: int, saw_blade: float,
                         algorithm, stock_algorithm: str = "maxrects_baf") -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     运行单个算法的切割方案
@@ -1227,7 +1235,7 @@ def run_single_algorithm(plates: List[Dict[str, Any]], orders: List[Dict[str, An
 
 def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]], 
                     others: List[Dict[str, Any]] = None, optim: int = 0, 
-                    saw_blade: int = 4, algorithm: str = "auto",
+                    saw_blade: float = 4.0, algorithm: str = "auto",
                     stock_algorithm: str = "maxrects_baf") -> List[Dict[str, Any]]:
     """
     主优化函数

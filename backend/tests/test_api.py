@@ -444,13 +444,13 @@ def test_saw_blade_parameter():
             }
         ],
         "optimization": True,
-        "saw_blade": 5  # 指定锯片宽度
+        "saw_blade": 5.5  # 指定锯片宽度（支持小数）
     }
 
     response = client.post("/optimize", json=request_data)
     assert response.status_code == 200
     data = response.json()
-    assert data["optimization_details"]["saw_blade_width"] == 5
+    assert data["optimization_details"]["saw_blade_width"] == 5.5
 
 def test_health_check():
     """测试健康检查端点"""
