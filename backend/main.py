@@ -554,11 +554,56 @@ class PlateOptimizer:
         
         return packer
     
+    def find_complementary_pairs(self, size_groups: Dict, L: int, W: int) -> Dict:
+        """
+        找到能够更好组合的尺寸对，解决混合组合优于单一尺寸的问题
+        例如：4a+6c 可能比 8a 或 10c 更优
+
+        Returns:
+            {(w1, h1, w2, h2): utilization_gain} 字典
+        """
+        bt = self.config.blade_thickness
+        sizes = list(size_groups.keys())
+        complementary = {}
+
+        for i, (w1, h1) in enumerate(sizes):
+            # 计算单一尺寸的基准利用率
+            single_count = (L // w1) * (W // h1)
+            single_util = single_count * w1 * h1 / (L * W) if L * W > 0 else 0
+
+            for w2, h2 in sizes[i:]:
+                if (w1, h1) == (w2, h2):
+                    continue
+
+                best_mixed = 0
+                # 尝试不同的列分配：n1列size1，剩余给size2
+                max_n1 = max(1, int(L // w1))
+                for n1 in range(1, max_n1):
+                    used_w = n1 * w1
+                    remaining = L - used_w
+                    n2 = int(remaining // w2)
+                    if n2 == 0:
+                        continue
+
+                    # 每种尺寸在其列中垂直填充
+                    area1 = n1 * w1 * int(W // h1) * h1
+                    area2 = n2 * w2 * int(W // h2) * h2
+                    mixed_util = (area1 + area2) / (L * W) if L * W > 0 else 0
+                    best_mixed = max(best_mixed, mixed_util)
+
+                # 如果混合组合比单一尺寸好至少2%，记录下来
+                if best_mixed > single_util + 0.02:
+                    gain = best_mixed - single_util
+                    complementary[(w1, h1, w2, h2)] = gain
+                    logger.info(f"Found complementary pair: ({w1}x{h1}, {w2}x{h2}) with {gain:.2%} gain")
+
+        return complementary
+
     def _sort_orders_for_optimal_packing(self, orders: List[SmallPlate], big_plate: SmallPlate) -> List[Tuple[int, SmallPlate, bool]]:
         """
         对订单进行排序以优化装箱利用率，优先考虑混合组合
-        策略：避免单一尺寸板材连续排列，优先考虑能够形成更好组合的板材
-        
+        策略：使用互补尺寸检测，识别混合组合优于单一尺寸的情况
+
         Returns:
             排序后的 (原始索引, 订单, 是否旋转) 元组列表
         """
@@ -618,7 +663,39 @@ class PlateOptimizer:
             if key not in size_groups:
                 size_groups[key] = []
             size_groups[key].append(info)
-        
+
+        # 使用互补尺寸检测（混合组合优化）
+        complementary = self.find_complementary_pairs(size_groups, length0, width0)
+
+        # 如果找到互补尺寸对，优先使用交错排列
+        if complementary:
+            best_pair = max(complementary, key=complementary.get)
+            w1, h1, w2, h2 = best_pair
+            group1 = size_groups.get((w1, h1), [])
+            group2 = size_groups.get((w2, h2), [])
+
+            logger.info(f"Using complementary pair strategy: ({w1}x{h1}, {w2}x{h2}) with {complementary[best_pair]:.2%} gain")
+
+            # 交错排列互补尺寸
+            result = []
+            max_len = max(len(group1), len(group2))
+            for i in range(max_len):
+                if i < len(group1):
+                    result.append(group1[i])
+                if i < len(group2):
+                    result.append(group2[i])
+
+            # 添加其他尺寸的板材
+            for key, group in size_groups.items():
+                if key not in [(w1, h1), (w2, h2)]:
+                    result.extend(group)
+
+            # 转换为结果格式
+            return [(info['index'], info['order'], info['rotate']) for info in result]
+
+        # 如果没有找到互补尺寸对，使用原有的多策略评估方法
+        logger.info("No significant complementary pairs found, using multi-strategy evaluation")
+
         # 计算每种尺寸的适配度和组合潜力
         size_stats = {}
         for key, group in size_groups.items():
