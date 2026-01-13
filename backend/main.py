@@ -554,17 +554,20 @@ class PlateOptimizer:
         
         return packer
     
-    def find_complementary_pairs(self, size_groups: Dict, L: int, W: int) -> Dict:
+    def find_complementary_pairs(self, size_groups: Dict, L: int, W: int) -> Tuple[Dict, Dict]:
         """
         找到能够更好组合的尺寸对，解决混合组合优于单一尺寸的问题
         例如：4a+6c 可能比 8a 或 10c 更优
 
         Returns:
-            {(w1, h1, w2, h2): utilization_gain} 字典
+            (complementary_dict, pattern_details_dict)
+            - complementary_dict: {(w1, h1, w2, h2): utilization_gain}
+            - pattern_details_dict: {(w1, h1, w2, h2): {'type': 'row'/'column', 'count1': n1, 'count2': n2, 'rows': num_rows}}
         """
         bt = self.config.blade_thickness
         sizes = list(size_groups.keys())
         complementary = {}
+        pattern_details = {}
 
         for i, (w1, h1) in enumerate(sizes):
             # 计算单一尺寸的基准利用率
@@ -576,7 +579,35 @@ class PlateOptimizer:
                     continue
 
                 best_mixed = 0
-                # 尝试不同的列分配：n1列size1，剩余给size2
+                best_strategy = None
+                best_pattern = None
+
+                # 策略1: 行式布局（当高度相同时）- 优先级最高
+                if abs(h1 - h2) < 1:  # 高度相同（考虑浮点误差）
+                    num_rows = int(W // h1)
+                    if num_rows > 0:
+                        # 尝试每行不同的宽度组合
+                        max_count1 = int(L // w1) + 1
+                        for count1 in range(max_count1):
+                            remaining_width = L - count1 * w1
+                            count2 = int(remaining_width // w2)
+
+                            # 计算总面积利用率
+                            area_per_row = count1 * w1 * h1 + count2 * w2 * h2
+                            total_area = area_per_row * num_rows
+                            row_util = total_area / (L * W) if L * W > 0 else 0
+
+                            if row_util > best_mixed:
+                                best_mixed = row_util
+                                best_strategy = f"row-based: {count1}×size1 + {count2}×size2 per row, {num_rows} rows"
+                                best_pattern = {
+                                    'type': 'row',
+                                    'count1': count1,
+                                    'count2': count2,
+                                    'rows': num_rows
+                                }
+
+                # 策略2: 列式布局（原有逻辑）
                 max_n1 = max(1, int(L // w1))
                 for n1 in range(1, max_n1):
                     used_w = n1 * w1
@@ -588,16 +619,119 @@ class PlateOptimizer:
                     # 每种尺寸在其列中垂直填充
                     area1 = n1 * w1 * int(W // h1) * h1
                     area2 = n2 * w2 * int(W // h2) * h2
-                    mixed_util = (area1 + area2) / (L * W) if L * W > 0 else 0
-                    best_mixed = max(best_mixed, mixed_util)
+                    col_util = (area1 + area2) / (L * W) if L * W > 0 else 0
+
+                    if col_util > best_mixed:
+                        best_mixed = col_util
+                        best_strategy = f"column-based: {n1} cols size1 + {n2} cols size2"
+                        best_pattern = {
+                            'type': 'column',
+                            'count1': n1,
+                            'count2': n2
+                        }
 
                 # 如果混合组合比单一尺寸好至少2%，记录下来
                 if best_mixed > single_util + 0.02:
                     gain = best_mixed - single_util
-                    complementary[(w1, h1, w2, h2)] = gain
-                    logger.info(f"Found complementary pair: ({w1}x{h1}, {w2}x{h2}) with {gain:.2%} gain")
+                    key = (w1, h1, w2, h2)
+                    complementary[key] = gain
+                    pattern_details[key] = best_pattern
+                    logger.info(f"Found complementary pair: ({w1}x{h1}, {w2}x{h2}) with {gain:.2%} gain using {best_strategy}")
 
-        return complementary
+        return complementary, pattern_details
+
+    def pack_orders_row_based(self, big_plate: SmallPlate, orders: List[SmallPlate],
+                               size1_key: Tuple, size2_key: Tuple,
+                               count1_per_row: int, count2_per_row: int) -> Tuple[List[Cut], List[SmallPlate]]:
+        """
+        使用行式布局装箱（当检测到行式互补模式时）
+
+        Args:
+            big_plate: 大板
+            orders: 订单列表
+            size1_key: 尺寸1的键 (width, height)
+            size2_key: 尺寸2的键 (width, height)
+            count1_per_row: 每行尺寸1的数量
+            count2_per_row: 每行尺寸2的数量
+        """
+        bt = self.config.blade_thickness
+        w1, h1 = size1_key
+        w2, h2 = size2_key
+
+        # 计算行数
+        num_rows = int(big_plate.width // h1)
+
+        # 分组订单
+        size1_orders = []
+        size2_orders = []
+        other_orders = []
+
+        for i, order in enumerate(orders):
+            w_with_blade = order.length + bt
+            h_with_blade = order.width + bt
+
+            if abs(w_with_blade - w1) < 1 and abs(h_with_blade - h1) < 1:
+                size1_orders.append((i, order))
+            elif abs(w_with_blade - w2) < 1 and abs(h_with_blade - h2) < 1:
+                size2_orders.append((i, order))
+            else:
+                other_orders.append((i, order))
+
+        cuts = []
+        packed_indices = set()
+
+        # 按行放置
+        current_y = 0
+        for row_idx in range(num_rows):
+            current_x = 0
+
+            # 放置尺寸1的板材
+            for _ in range(count1_per_row):
+                if size1_orders:
+                    idx, order = size1_orders.pop(0)
+                    cut = Cut(
+                        plate=order,
+                        x1=current_x,
+                        y1=current_y,
+                        x2=current_x + order.length,
+                        y2=current_y + order.width,
+                        is_stock=False
+                    )
+                    cuts.append(cut)
+                    packed_indices.add(idx)
+                    current_x += order.length + bt
+
+            # 放置尺寸2的板材
+            for _ in range(count2_per_row):
+                if size2_orders:
+                    idx, order = size2_orders.pop(0)
+                    cut = Cut(
+                        plate=order,
+                        x1=current_x,
+                        y1=current_y,
+                        x2=current_x + order.length,
+                        y2=current_y + order.width,
+                        is_stock=False
+                    )
+                    cuts.append(cut)
+                    packed_indices.add(idx)
+                    current_x += order.length + bt
+
+            current_y += int(h1)
+
+            # 如果两种尺寸都用完了，提前结束
+            if not size1_orders and not size2_orders:
+                break
+
+        # 剩余订单
+        remaining = []
+        for i, order in enumerate(orders):
+            if i not in packed_indices:
+                remaining.append(order)
+
+        logger.info(f"Row-based packing: placed {len(cuts)} pieces in {row_idx + 1} rows")
+
+        return cuts, remaining
 
     def _sort_orders_for_optimal_packing(self, orders: List[SmallPlate], big_plate: SmallPlate) -> List[Tuple[int, SmallPlate, bool]]:
         """
@@ -665,7 +799,7 @@ class PlateOptimizer:
             size_groups[key].append(info)
 
         # 使用互补尺寸检测（混合组合优化）
-        complementary = self.find_complementary_pairs(size_groups, length0, width0)
+        complementary, pattern_details = self.find_complementary_pairs(size_groups, length0, width0)
 
         # 如果找到互补尺寸对，优先使用交错排列
         if complementary:
@@ -673,6 +807,12 @@ class PlateOptimizer:
             w1, h1, w2, h2 = best_pair
             group1 = size_groups.get((w1, h1), [])
             group2 = size_groups.get((w2, h2), [])
+
+            # 存储模式详情供pack_orders使用
+            self._detected_pattern = {
+                'pair': best_pair,
+                'details': pattern_details[best_pair]
+            }
 
             logger.info(f"Using complementary pair strategy: ({w1}x{h1}, {w2}x{h2}) with {complementary[best_pair]:.2%} gain")
 
@@ -692,6 +832,9 @@ class PlateOptimizer:
 
             # 转换为结果格式
             return [(info['index'], info['order'], info['rotate']) for info in result]
+
+        # 清除模式详情
+        self._detected_pattern = None
 
         # 如果没有找到互补尺寸对，使用原有的多策略评估方法
         logger.info("No significant complementary pairs found, using multi-strategy evaluation")
@@ -941,15 +1084,28 @@ class PlateOptimizer:
     
     def pack_orders(self, big_plate: SmallPlate, orders: List[SmallPlate]) -> Tuple[List[Cut], List[SmallPlate]]:
         """使用 rectpack 装箱订单板材"""
-        packer = self.create_packer(big_plate.length, big_plate.width)
-
         bt = self.config.blade_thickness
-        # 加锯片厚度后的大板尺寸
-        length0 = big_plate.length
-        width0 = big_plate.width
 
         # 对订单进行排序以优化装箱利用率
         sorted_orders = self._sort_orders_for_optimal_packing(orders, big_plate)
+
+        # 检查是否检测到行式布局模式
+        if hasattr(self, '_detected_pattern') and self._detected_pattern:
+            pattern = self._detected_pattern
+            if pattern['details']['type'] == 'row':
+                logger.info("Using custom row-based packing")
+                w1, h1, w2, h2 = pattern['pair']
+                return self.pack_orders_row_based(
+                    big_plate, orders,
+                    (w1, h1), (w2, h2),
+                    pattern['details']['count1'],
+                    pattern['details']['count2']
+                )
+
+        # 否则使用标准的rectpack装箱
+        packer = self.create_packer(big_plate.length, big_plate.width)
+        length0 = big_plate.length
+        width0 = big_plate.width
 
         # 添加所有订单矩形（使用排序后的顺序和预计算的旋转状态）
         for orig_idx, order, should_rotate in sorted_orders:
