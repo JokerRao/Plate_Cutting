@@ -554,6 +554,314 @@ class PlateOptimizer:
         
         return packer
     
+    def _sort_orders_for_optimal_packing(self, orders: List[SmallPlate], big_plate: SmallPlate) -> List[Tuple[int, SmallPlate, bool]]:
+        """
+        对订单进行排序以优化装箱利用率，优先考虑混合组合
+        策略：避免单一尺寸板材连续排列，优先考虑能够形成更好组合的板材
+        
+        Returns:
+            排序后的 (原始索引, 订单, 是否旋转) 元组列表
+        """
+        bt = self.config.blade_thickness
+        length0 = big_plate.length
+        width0 = big_plate.width
+        
+        # 按尺寸分组板材（考虑旋转后的最佳尺寸）
+        def get_optimal_size(order: SmallPlate) -> Tuple[float, float, bool]:
+            """获取板材的最佳尺寸和旋转状态"""
+            x1 = order.length + bt
+            x2 = order.width + bt
+            
+            # 计算两种方向的适配度
+            fit1 = (length0 // x1) * (width0 // x2) if x1 <= length0 and x2 <= width0 else 0
+            fit2 = (length0 // x2) * (width0 // x1) if x2 <= length0 and x1 <= width0 else 0
+            
+            # 决定是否旋转
+            cond1 = (
+                x1 < x2 and
+                (length0 // x2) * (width0 // x1) >= (length0 // x1) * (width0 // x2)
+            )
+            cond2 = (
+                abs(x1 - x2) / max(x1, x2) < 0.56 and
+                (length0 // x2) * (width0 // x1) > (length0 // x1) * (width0 // x2)
+            )
+            should_rotate = cond1 or cond2
+            
+            # 使用最佳方向的尺寸
+            if fit2 > fit1 or (fit2 == fit1 and should_rotate):
+                return (x2, x1, True)
+            else:
+                return (x1, x2, False)
+        
+        # 为每个订单计算最佳尺寸和旋转状态
+        orders_with_info = []
+        for i, order in enumerate(orders):
+            w, h, rotate = get_optimal_size(order)
+            orders_with_info.append({
+                'index': i,
+                'order': order,
+                'width': w,
+                'height': h,
+                'rotate': rotate,
+                'area': order.length * order.width,
+                'fit_count': (length0 // w) * (width0 // h) if w <= length0 and h <= width0 else 0
+            })
+        
+        # 按尺寸分组（使用宽度和高度作为键，考虑浮点误差）
+        def size_key(w: float, h: float) -> Tuple[int, int]:
+            """将尺寸转换为整数键，用于分组（考虑1mm的误差）"""
+            return (int(round(w)), int(round(h)))
+        
+        size_groups = {}
+        for info in orders_with_info:
+            key = size_key(info['width'], info['height'])
+            if key not in size_groups:
+                size_groups[key] = []
+            size_groups[key].append(info)
+        
+        # 计算每种尺寸的适配度和组合潜力
+        size_stats = {}
+        for key, group in size_groups.items():
+            w, h = key
+            fit_count = (length0 // w) * (width0 // h) if w <= length0 and h <= width0 else 0
+            total_count = len(group)
+            # 组合潜力：如果单一尺寸能放满整张板，组合潜力较低
+            # 如果单一尺寸放不满，组合潜力较高
+            utilization_if_single = min(total_count, fit_count) * (w * h) / (length0 * width0)
+            combination_potential = 1.0 - min(utilization_if_single, 1.0)
+            
+            size_stats[key] = {
+                'fit_count': fit_count,
+                'total_count': total_count,
+                'combination_potential': combination_potential,
+                'avg_area': sum(item['area'] for item in group) / len(group)
+            }
+        
+        # 排序策略：优先考虑组合潜力高的尺寸，然后采用轮询方式混合排列
+        def calculate_sort_priority(info: dict) -> Tuple[float, float, float]:
+            """计算排序优先级"""
+            key = size_key(info['width'], info['height'])
+            stats = size_stats[key]
+            
+            # 优先级1：组合潜力（越高越优先，负数表示降序）
+            # 组合潜力高的尺寸应该优先放置，以便与其他尺寸形成组合
+            priority1 = -stats['combination_potential']
+            
+            # 优先级2：适配难度（能放的数量越少，难度越高，优先放置）
+            # 难以适配的板材应该优先放置
+            difficulty = -stats['fit_count'] if stats['fit_count'] > 0 else -999999
+            priority2 = difficulty
+            
+            # 优先级3：面积（越大越优先）
+            priority3 = -info['area']
+            
+            return (priority1, priority2, priority3)
+        
+        # 尝试多种排列策略，选择最优的
+        def evaluate_arrangement(arrangement: List[dict]) -> float:
+            """
+            评估排列的潜在利用率
+            综合考虑：面积利用率、尺寸多样性、组合潜力
+            """
+            if not arrangement:
+                return 0.0
+            
+            # 1. 计算已使用的面积
+            total_area = sum(info['width'] * info['height'] for info in arrangement)
+            used_ratio = min(total_area / (length0 * width0), 1.0)
+            
+            # 2. 计算尺寸多样性（不同尺寸的数量）
+            unique_sizes = len(set(size_key(info['width'], info['height']) for info in arrangement))
+            diversity_score = unique_sizes / len(arrangement) if arrangement else 0
+            
+            # 3. 评估组合潜力：检查不同尺寸是否能形成更好的组合
+            # 计算每种尺寸的占比
+            size_counts = {}
+            for info in arrangement:
+                key = size_key(info['width'], info['height'])
+                size_counts[key] = size_counts.get(key, 0) + 1
+            
+            # 如果单一尺寸占比过高，组合潜力较低
+            max_size_ratio = max(size_counts.values()) / len(arrangement) if arrangement else 0
+            balance_score = 1.0 - max_size_ratio  # 越平衡，得分越高
+            
+            # 4. 评估适配度：检查板材是否能更好地适配大板
+            avg_fit_score = sum(
+                size_stats[size_key(info['width'], info['height'])]['fit_count'] 
+                for info in arrangement
+            ) / len(arrangement) if arrangement else 0
+            normalized_fit = min(avg_fit_score / 10.0, 1.0)  # 归一化到0-1
+            
+            # 综合评分：多样性、平衡性、适配度、面积利用率
+            # 权重：多样性20%，平衡性30%，适配度20%，面积利用率30%
+            final_score = (
+                diversity_score * 0.2 +
+                balance_score * 0.3 +
+                normalized_fit * 0.2 +
+                used_ratio * 0.3
+            )
+            
+            return final_score
+        
+        def generate_round_robin_arrangement() -> List[dict]:
+            """生成轮询排列"""
+            grouped_by_size = {}
+            for info in orders_with_info:
+                key = size_key(info['width'], info['height'])
+                if key not in grouped_by_size:
+                    grouped_by_size[key] = []
+                grouped_by_size[key].append(info)
+            
+            result = []
+            max_group_size = max(len(group) for group in grouped_by_size.values()) if grouped_by_size else 0
+            
+            for round_idx in range(max_group_size):
+                sorted_groups = sorted(
+                    grouped_by_size.items(),
+                    key=lambda x: size_stats[x[0]]['combination_potential'],
+                    reverse=True
+                )
+                
+                for key, group in sorted_groups:
+                    if round_idx < len(group):
+                        result.append(group[round_idx])
+            
+            return result
+        
+        def generate_greedy_arrangement() -> List[dict]:
+            """生成贪心排列：每次选择能形成最好组合的下一个板材"""
+            remaining = orders_with_info.copy()
+            result = []
+            
+            # 按组合潜力排序尺寸组
+            grouped_by_size = {}
+            for info in orders_with_info:
+                key = size_key(info['width'], info['height'])
+                if key not in grouped_by_size:
+                    grouped_by_size[key] = []
+                grouped_by_size[key].append(info)
+            
+            # 按组合潜力排序尺寸组
+            sorted_size_keys = sorted(
+                grouped_by_size.keys(),
+                key=lambda k: size_stats[k]['combination_potential'],
+                reverse=True
+            )
+            
+            # 贪心选择：优先从组合潜力高的尺寸组中选择
+            size_group_indices = {key: 0 for key in sorted_size_keys}
+            
+            while remaining:
+                best_info = None
+                best_score = -1
+                best_key = None
+                
+                # 从每个尺寸组中选择一个候选
+                for key in sorted_size_keys:
+                    group = grouped_by_size[key]
+                    idx = size_group_indices[key]
+                    if idx < len(group):
+                        candidate = group[idx]
+                        if candidate in remaining:
+                            # 评估这个候选与已选板材的组合效果
+                            temp_result = result + [candidate]
+                            score = evaluate_arrangement(temp_result)
+                            
+                            if score > best_score:
+                                best_score = score
+                                best_info = candidate
+                                best_key = key
+                
+                if best_info:
+                    result.append(best_info)
+                    remaining.remove(best_info)
+                    size_group_indices[best_key] += 1
+                else:
+                    # 如果没有找到，直接添加剩余的
+                    result.extend(remaining)
+                    break
+            
+            return result
+        
+        def generate_balanced_arrangement() -> List[dict]:
+            """生成平衡排列：确保不同尺寸均匀分布"""
+            grouped_by_size = {}
+            for info in orders_with_info:
+                key = size_key(info['width'], info['height'])
+                if key not in grouped_by_size:
+                    grouped_by_size[key] = []
+                grouped_by_size[key].append(info)
+            
+            # 按组合潜力排序尺寸组
+            sorted_groups = sorted(
+                grouped_by_size.items(),
+                key=lambda x: size_stats[x[0]]['combination_potential'],
+                reverse=True
+            )
+            
+            result = []
+            group_queues = {key: group.copy() for key, group in sorted_groups}
+            
+            # 计算每个尺寸组的权重（基于组合潜力）
+            total_potential = sum(size_stats[key]['combination_potential'] for key, _ in sorted_groups)
+            group_weights = {
+                key: size_stats[key]['combination_potential'] / total_potential if total_potential > 0 else 1.0 / len(sorted_groups)
+                for key, _ in sorted_groups
+            }
+            
+            # 根据权重分配每个尺寸组的数量
+            total_items = len(orders_with_info)
+            group_targets = {
+                key: max(1, int(weight * total_items))
+                for key, weight in group_weights.items()
+            }
+            
+            # 轮询排列，但考虑权重
+            max_count = max(len(group) for _, group in sorted_groups)
+            for round_idx in range(max_count):
+                for key, group in sorted_groups:
+                    if round_idx < len(group):
+                        # 根据权重决定是否在这一轮添加
+                        if round_idx < group_targets.get(key, len(group)):
+                            result.append(group[round_idx])
+            
+            return result
+        
+        # 尝试多种策略并选择最好的
+        strategies = [
+            ("round_robin", generate_round_robin_arrangement),
+            ("greedy", generate_greedy_arrangement),
+            ("balanced", generate_balanced_arrangement),
+        ]
+        
+        best_arrangement = None
+        best_score = -1
+        best_strategy_name = None
+        
+        for strategy_name, strategy_func in strategies:
+            try:
+                arrangement = strategy_func()
+                score = evaluate_arrangement(arrangement)
+                if score > best_score:
+                    best_score = score
+                    best_arrangement = arrangement
+                    best_strategy_name = strategy_name
+            except Exception as e:
+                logger.warning(f"Strategy {strategy_name} failed: {e}")
+                continue
+        
+        # 如果所有策略都失败，使用简单的优先级排序
+        if best_arrangement is None:
+            orders_with_info.sort(key=calculate_sort_priority)
+            best_arrangement = orders_with_info
+        
+        logger.info(f"Selected arrangement strategy: {best_strategy_name} with score: {best_score:.4f}")
+        
+        # 转换为结果格式
+        result = [(info['index'], info['order'], info['rotate']) for info in best_arrangement]
+        
+        return result
+    
     def pack_orders(self, big_plate: SmallPlate, orders: List[SmallPlate]) -> Tuple[List[Cut], List[SmallPlate]]:
         """使用 rectpack 装箱订单板材"""
         packer = self.create_packer(big_plate.length, big_plate.width)
@@ -563,30 +871,19 @@ class PlateOptimizer:
         length0 = big_plate.length
         width0 = big_plate.width
 
-        # 添加所有订单矩形
-        for i, order in enumerate(orders):
+        # 对订单进行排序以优化装箱利用率
+        sorted_orders = self._sort_orders_for_optimal_packing(orders, big_plate)
+
+        # 添加所有订单矩形（使用排序后的顺序和预计算的旋转状态）
+        for orig_idx, order, should_rotate in sorted_orders:
             # 加锯片厚度后的订单板尺寸
             x1 = order.length + bt
             x2 = order.width + bt
 
-            # 第一种旋转条件
-            cond1 = (
-                x1 < x2 and
-                (length0 // x2) * (width0 // x1) >= (length0 // x1) * (width0 // x2)
-            )
-
-            # 第二种旋转条件
-            cond2 = (
-                abs(x1 - x2) / max(x1, x2) < 0.56 and
-                (length0 // x2) * (width0 // x1) > (length0 // x1) * (width0 // x2)
-            )
-
-            rotate = cond1 or cond2
-
-            if rotate:
-                packer.add_rect(x2, x1, rid=i)  # 旋转后加入
+            if should_rotate:
+                packer.add_rect(x2, x1, rid=orig_idx)  # 旋转后加入，使用原始索引
             else:
-                packer.add_rect(x1, x2, rid=i)  # 原方向加入
+                packer.add_rect(x1, x2, rid=orig_idx)  # 原方向加入，使用原始索引
         
         # 执行装箱
         packer.pack()
