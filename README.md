@@ -27,6 +27,7 @@ Plate_Cutting/
 │   ├── main.py             # 核心优化算法
 │   ├── config.py           # 配置管理
 │   ├── run.py              # 服务启动
+│   ├── tests/              # API 测试 (pytest)
 │   └── requirements.txt    # Python 依赖
 └── README.md               # 项目说明
 ```
@@ -34,7 +35,7 @@ Plate_Cutting/
 ## 🛠️ 技术栈
 
 ### 前端
-- **Next.js 14** - React 全栈框架
+- **Next.js 15** - React 全栈框架
 - **TypeScript** - 类型安全的 JavaScript
 - **Tailwind CSS** - 实用优先的 CSS 框架
 - **Supabase** - 实时数据库和认证服务
@@ -113,7 +114,6 @@ SUPABASE_KEY=your_supabase_key
 - **项目列表** (`/project`)：项目管理和列表展示
 - **项目详情** (`/project/[id]`)：项目信息编辑和数据管理
 - **排版展示** (`/layout/[id]`)：切割方案可视化展示
-- **统计分析** (`/layout/[id]/stats`)：详细的统计信息
 
 ### 后端功能
 - **优化算法**：智能的板材切割优化算法
@@ -153,16 +153,14 @@ interface CuttingPlan {
 
 ### 优化切割
 ```http
-POST /api/optimize
+POST /optimize
 Content-Type: application/json
 
 {
-  "uid": "用户ID",
-  "project_id": "项目ID",
   "plates": [...],
   "orders": [...],
   "others": [...],
-  "optimization": 1,
+  "optimization": true,
   "saw_blade": 4
 }
 ```
@@ -217,10 +215,7 @@ python run.py --debug
 
 ### 测试
 ```bash
-# 前端测试
-npm run test
-
-# 后端测试
+cd backend
 pytest
 ```
 
@@ -234,7 +229,7 @@ pytest
 
 ## 📄 许可证
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+以仓库内声明为准（若未包含 LICENSE 文件，请联系维护者）。
 
 ## 📞 联系方式
 

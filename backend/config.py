@@ -1,8 +1,9 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 from functools import lru_cache
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env.local", case_sensitive=True)
     """
     配置类，优先级从高到低：
     1. 环境变量（.env 文件中的配置）
@@ -50,10 +51,6 @@ class Settings(BaseSettings):
     DEFAULT_ATTACHMENT: int = 100  # 默认值，可通过环境变量 DEFAULT_ATTACHMENT 覆盖
     DEFAULT_RATIO: float = 0.4  # 默认值，可通过环境变量 DEFAULT_RATIO 覆盖
     DEFAULT_SHOW_AREA: int = 120000  # 默认值，可通过环境变量 DEFAULT_SHOW_AREA 覆盖
-
-    class Config:
-        env_file = ".env.local"  # 指定环境变量文件
-        case_sensitive = True  # 环境变量名称区分大小写
 
 @lru_cache()
 def get_settings() -> Settings:

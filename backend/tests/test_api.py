@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
-from fastapi import Request
-from api import app, CuttingRequest, Plate, Order, StockPlate
+from api import app
+from config import get_settings
 import asyncio
 import time
 
@@ -374,7 +374,7 @@ async def test_concurrent_requests():
         try:
             response = client.post("/optimize", json=request_data)
             return response.status_code
-        except Exception as e:
+        except Exception:
             return 500
 
     # 同时发送10个请求
@@ -424,6 +424,7 @@ def test_rate_limiting():
 
 def test_saw_blade_parameter():
     """测试锯片宽度参数"""
+    time.sleep(1.2)  # 避免紧接在限流测试之后同一秒内仍被限流
     request_data = {
         "uid": "test_user",
         "project_id": "test_project",
@@ -456,7 +457,9 @@ def test_health_check():
     """测试健康检查端点"""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["version"] == get_settings().API_VERSION
 
 # 在其他测试之间添加延迟
 @pytest.fixture(autouse=True)

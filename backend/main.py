@@ -564,7 +564,6 @@ class PlateOptimizer:
             - complementary_dict: {(w1, h1, w2, h2): utilization_gain}
             - pattern_details_dict: {(w1, h1, w2, h2): {'type': 'row'/'column', 'count1': n1, 'count2': n2, 'rows': num_rows}}
         """
-        bt = self.config.blade_thickness
         sizes = list(size_groups.keys())
         complementary = {}
         pattern_details = {}
@@ -1020,7 +1019,6 @@ class PlateOptimizer:
             )
             
             result = []
-            group_queues = {key: group.copy() for key, group in sorted_groups}
             
             # 计算每个尺寸组的权重（基于组合潜力）
             total_potential = sum(size_stats[key]['combination_potential'] for key, _ in sorted_groups)
@@ -1104,8 +1102,6 @@ class PlateOptimizer:
 
         # 否则使用标准的rectpack装箱
         packer = self.create_packer(big_plate.length, big_plate.width)
-        length0 = big_plate.length
-        width0 = big_plate.width
 
         # 添加所有订单矩形（使用排序后的顺序和预计算的旋转状态）
         for orig_idx, order, should_rotate in sorted_orders:
@@ -1836,7 +1832,7 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
     
     if algorithm == "auto":
         # 自动优化模式：尝试所有算法，选择最优
-        logger.info(f"使用自动优化模式，测试多种算法...")
+        logger.info("使用自动优化模式，测试多种算法...")
         logger.info(f"库存填充策略: {STOCK_ALGORITHMS.get(stock_algorithm, stock_algorithm)}")
         
         best_results = None
@@ -1878,7 +1874,7 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
         
         # 输出最终选择理由
         logger.info(f"\n最优算法: {best_algorithm_name}")
-        logger.info(f"选择理由:")
+        logger.info("选择理由:")
         
         # 分析为什么选择这个算法
         for algo_name, _, metrics in algorithm_results:
@@ -1900,7 +1896,7 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
         results, metrics = run_single_algorithm(
             plates, orders, others, optim, saw_blade, ALGORITHMS[algorithm], stock_algorithm
         )
-        logger.info(f"完成切割:")
+        logger.info("完成切割:")
         logger.info(f"  - 使用板材: {metrics['used_plates']} 块")
         logger.info(f"  - 平均利用率: {metrics['overall_rate']:.2%}")
         logger.info(f"  - 平均切割数: {metrics['avg_cuts_per_plate']:.1f} 次/板")

@@ -4,13 +4,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/utils/supabaseClient';
 
-// 添加颜色池常量
+/** 页面卡片区分：低饱和中性底，避免彩虹色 */
 const COLOR_POOL = [
-  { bg: 'bg-blue-50', text: 'text-blue-600' },
-  { bg: 'bg-green-50', text: 'text-green-600' },
-  { bg: 'bg-purple-50', text: 'text-purple-600' },
-  { bg: 'bg-pink-50', text: 'text-pink-600' },
-  { bg: 'bg-orange-50', text: 'text-orange-600' },
+  { bg: 'bg-surface', text: 'text-ink-muted' },
+  { bg: 'bg-muted', text: 'text-ink-muted' },
+  { bg: 'bg-[#eef0f2]', text: 'text-ink-muted' },
+  { bg: 'bg-surface', text: 'text-ink-muted' },
+  { bg: 'bg-muted', text: 'text-ink-muted' },
 ];
 
 // 添加一个新的函数来获取总体统计信息
@@ -143,30 +143,33 @@ export default function LayoutStatsPage() {
   }, [projectId]);
 
   return (
-    <div className="relative max-w-7xl mx-auto my-8 rounded-2xl shadow-2xl border bg-white flex flex-col h-[92vh]">
-      {/* 导航按钮 */}
-      <div className="flex items-center px-6 pt-4">
-        <div className="flex gap-2 mb-4">
+    <div className="page-gallery flex min-h-screen flex-col">
+      <div className="page-gallery-inner flex max-h-[92vh] min-h-0 flex-1 flex-col border border-hairline bg-surface" style={{ borderRadius: 2 }}>
+      {/* 导航 */}
+      <div className="flex items-center px-6 pt-8">
+        <div className="mb-6 flex gap-2">
           <button 
-            className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold"
+            type="button"
+            className="btn-gallery-secondary"
             onClick={() => router.push(`/project/${projectId}`)}
           >
             项目
           </button>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold">
-            切板统计
-          </button>
+          <span className="btn-gallery-secondary-active">切板统计</span>
         </div>
       </div>
 
       {/* 项目名称 */}
-      <div className="px-6 pb-2 border-b">
-        <h1 className="text-xl font-bold">{projectName || '未命名项目'}</h1>
+      <div className="border-b border-hairline px-6 pb-4 animate-fade-in-up">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink flex items-center gap-3">
+          <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
+          {projectName || '未命名项目'}
+        </h1>
       </div>
 
       {/* 切板统计 */}
-      <div className="flex-1 p-6 overflow-auto">
-        <div className="grid grid-cols-3 gap-4">
+      <div className="min-h-0 flex-1 overflow-auto p-6 md:p-8">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {cutted.map((item, index) => {
             const colorIndex = getPageColorIndex(index);
             const { bg, text } = COLOR_POOL[colorIndex];
@@ -174,25 +177,27 @@ export default function LayoutStatsPage() {
             return (
               <div 
                 key={index}
-                className={`border rounded-lg p-4 hover:brightness-95 ${bg}`}
+                className={`border-hairline border p-5 shadow-sm hover-lift transition-all animate-fade-in-up ${bg}`}
+                style={{ borderRadius: 6, animationDelay: `${index * 0.05}s` }}
               >
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-semibold">第 {index + 1} 页</h3>
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <h3 className="text-sm font-medium text-ink">第 {index + 1} 页</h3>
                   <button
-                    className={`${text} hover:brightness-90 text-sm`}
+                    type="button"
+                    className={`btn-gallery-link text-sm ${text}`}
                     onClick={() => router.push(`/layout/${projectId}/${index + 1}`)}
                   >
                     查看详情 →
                   </button>
                 </div>
-                <div className="text-sm text-gray-600">
+                <div className={`text-sm leading-relaxed ${text}`}>
                   <p>板材尺寸: {item.plate[0]} × {item.plate[1]}</p>
                   <p>已切件数: {item.cutted.length}</p>
                   <p>使用率: {(item.rate * 100).toFixed(1)}%</p>
-                  <div className="mt-2 pt-2 border-t">
+                  <div className="mt-3 border-t border-hairline pt-3">
                     {/* 零件统计 */}
                     <div className="mb-2">
-                      <p className="font-medium text-gray-700">零件:</p>
+                      <p className="text-ink font-medium">零件:</p>
                       {getPartsSummary(item.cutted).parts.map(([size, count], i) => (
                         <p key={i} className={`text-xs ${text}`}>
                           {size}x{count}
@@ -201,7 +206,7 @@ export default function LayoutStatsPage() {
                     </div>
                     {/* 常用尺寸统计 */}
                     <div>
-                      <p className="font-medium text-gray-700">常用尺寸:</p>
+                      <p className="text-ink font-medium">常用尺寸:</p>
                       {getPartsSummary(item.cutted).reusable.map(([size, count], i) => (
                         <p key={i} className={`text-xs ${text}`}>
                           {size}x{count}
@@ -216,31 +221,43 @@ export default function LayoutStatsPage() {
         </div>
 
         {cutted.length === 0 && (
-          <div className="text-center text-gray-500 mt-8">
+          <div className="mt-12 text-center text-ink-muted">
             暂无切板数据
           </div>
         )}
 
         {/* 修改总体统计部分 */}
         {cutted.length > 0 && (
-          <div className="mt-8 border-t pt-4">
-            <h2 className="text-lg font-semibold mb-4">总体统计</h2>
+          <div className="mt-14 border-t border-hairline pt-10">
+            <h2 className="mb-8 text-xl font-semibold text-ink flex items-center gap-2">
+              <svg className="w-5 h-5 text-accent-green" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+              总体统计
+            </h2>
             
             {/* 基本统计信息 */}
-            <div className="grid grid-cols-3 gap-4 text-center mb-6">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-gray-600">总页数</div>
-                <div className="text-2xl font-bold">{cutted.length}</div>
+            <div className="mb-10 grid grid-cols-1 gap-4 text-center sm:grid-cols-3">
+              <div className="border-hairline border bg-surface p-6 shadow-sm hover-lift transition-all" style={{ borderRadius: 6 }}>
+                <div className="text-sm font-medium text-ink-muted flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4 text-[#0284c7]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  总页数
+                </div>
+                <div className="mt-3 text-3xl font-bold text-ink">{cutted.length}</div>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-gray-600">总切件数</div>
-                <div className="text-2xl font-bold">
+              <div className="border-hairline border bg-surface p-6 shadow-sm hover-lift transition-all" style={{ borderRadius: 6 }}>
+                <div className="text-sm font-medium text-ink-muted flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4 text-[#9333ea]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                  总切件数
+                </div>
+                <div className="mt-3 text-3xl font-bold text-ink">
                   {cutted.reduce((sum, item) => sum + item.cutted.length, 0)}
                 </div>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-gray-600">平均使用率</div>
-                <div className="text-2xl font-bold">
+              <div className="border-hairline border bg-surface p-6 shadow-sm hover-lift transition-all" style={{ borderRadius: 6 }}>
+                <div className="text-sm font-medium text-ink-muted flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4 text-accent-green" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
+                  平均使用率
+                </div>
+                <div className="mt-3 text-3xl font-bold text-ink">
                   {(cutted.reduce((sum, item) => sum + item.rate, 0) / cutted.length * 100).toFixed(1)}%
                 </div>
               </div>
@@ -249,12 +266,15 @@ export default function LayoutStatsPage() {
             {/* 详细统计表格 */}
             <div className="space-y-6">
               {/* 零件统计表格 */}
-              <div className="table-container">
-                <div className="table-title">零件统计</div>
+              <div className="table-container hover-lift shadow-sm">
+                <div className="table-title flex items-center gap-2">
+                  <svg className="w-4 h-4 text-[#9333ea]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                  零件统计
+                </div>
                 <div className="table-content">
                   <table className="min-w-full">
                     <thead>
-                      <tr className="bg-blue-50">
+                      <tr>
                         <th className="border p-2">编号</th>
                         <th className="border p-2">长度</th>
                         <th className="border p-2">宽度</th>
@@ -263,7 +283,7 @@ export default function LayoutStatsPage() {
                     </thead>
                     <tbody>
                       {getTotalSummary(cutted).parts.map((item) => (
-                        <tr key={item.id} className="hover:bg-gray-50">
+                        <tr key={item.id}>
                           <td className="border p-2 text-center">{item.id}</td>
                           <td className="border p-2 text-center">{item.length}</td>
                           <td className="border p-2 text-center">{item.width}</td>
@@ -276,12 +296,15 @@ export default function LayoutStatsPage() {
               </div>
 
               {/* 常用尺寸统计表格 */}
-              <div className="table-container">
-                <div className="table-title">常用尺寸统计</div>
+              <div className="table-container hover-lift shadow-sm">
+                <div className="table-title flex items-center gap-2">
+                  <svg className="w-4 h-4 text-[#d97706]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                  常用尺寸统计
+                </div>
                 <div className="table-content">
                   <table className="min-w-full">
                     <thead>
-                      <tr className="bg-yellow-50">
+                      <tr>
                         <th className="border p-2">编号</th>
                         <th className="border p-2">长度</th>
                         <th className="border p-2">宽度</th>
@@ -291,7 +314,7 @@ export default function LayoutStatsPage() {
                     </thead>
                     <tbody>
                       {getTotalSummary(cutted).reusable.map((item) => (
-                        <tr key={item.id} className="hover:bg-gray-50">
+                        <tr key={item.id}>
                           <td className="border p-2 text-center">{item.id}</td>
                           <td className="border p-2 text-center">{item.length}</td>
                           <td className="border p-2 text-center">{item.width}</td>
@@ -306,6 +329,7 @@ export default function LayoutStatsPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

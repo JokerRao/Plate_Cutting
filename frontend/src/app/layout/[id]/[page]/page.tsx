@@ -4,15 +4,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/utils/supabaseClient';
 
-interface CuttedItem {
-  start_x: number;
-  start_y: number;
-  length: number;
-  width: number;
-  type: 0 | 1;  // 0: 零件, 1: 常用尺寸
-  id: string;
-}
-
 export default function LayoutPage() {
   const params = useParams();
   const router = useRouter();
@@ -24,8 +15,6 @@ export default function LayoutPage() {
   const [layoutData, setLayoutData] = useState<any>(null);
   const [orders, setOrders] = useState<any[]>([]);
   const [others, setOthers] = useState<any[]>([]);
-  const [ordersCutted, setOrdersCutted] = useState<any[]>([]);
-  const [othersCutted, setOthersCutted] = useState<any[]>([]);
   const [totalPages, setTotalPages] = useState(0);
   const [allCutted, setAllCutted] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);  // 添加加载状态
@@ -151,15 +140,15 @@ export default function LayoutPage() {
     ctx.scale(1, -1);
 
     // 绘制大板
-    ctx.fillStyle = '#f3f4f6';
+    ctx.fillStyle = '#f2f3f5';
     ctx.fillRect(0, 0, plateLength * scale, plateWidth * scale);
-    ctx.strokeStyle = '#000';
+    ctx.strokeStyle = '#1d1e20';
     ctx.strokeRect(0, 0, plateLength * scale, plateWidth * scale);
 
     // 标注大板尺寸
     ctx.scale(1, -1);
-    ctx.fillStyle = '#000';
-    ctx.font = '14px Arial';
+    ctx.fillStyle = '#1d1e20';
+    ctx.font = '14px system-ui, sans-serif';
     ctx.fillText(`${plateLength}mm`, plateLength * scale / 2, 20);
     ctx.save();
     ctx.translate(plateLength * scale + 20, -plateWidth * scale / 2);
@@ -174,7 +163,7 @@ export default function LayoutPage() {
         const { start_x, start_y, length, width, is_stock, id } = piece;
         
         // 绘制板件填充
-        ctx.fillStyle = !is_stock ? '#93c5fd' : '#fcd34d';
+        ctx.fillStyle = !is_stock ? '#b8d4ff' : '#e5dfd6';
         ctx.fillRect(
           start_x * scale,
           start_y * scale,
@@ -183,7 +172,7 @@ export default function LayoutPage() {
         );
         
         // 绘制板件边框
-        ctx.strokeStyle = '#000';
+        ctx.strokeStyle = '#1d1e20';
         ctx.strokeRect(
           start_x * scale,
           start_y * scale,
@@ -193,8 +182,8 @@ export default function LayoutPage() {
 
         // 标注尺寸和ID
         ctx.scale(1, -1);
-        ctx.fillStyle = '#000';
-        ctx.font = '12px Arial';
+        ctx.fillStyle = '#1d1e20';
+        ctx.font = '12px system-ui, sans-serif';
         
         // 长度标注 - 固定距离15px
         const lengthText = `${length}mm`;
@@ -218,7 +207,7 @@ export default function LayoutPage() {
         ctx.restore();
 
         // ID标注 - 保持在中心
-        ctx.font = '14px Arial';
+        ctx.font = '14px system-ui, sans-serif';
         const idText = !is_stock ? `${id}` : `R${id}`;
         const idWidth = ctx.measureText(idText).width;
         ctx.fillText(
@@ -289,12 +278,19 @@ export default function LayoutPage() {
     if (filteredData.length === 0) return null;
 
     return (
-      <div className="table-container">
-        <div className="table-title">{title}</div>
+      <div className="table-container hover-lift shadow-sm animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+        <div className="table-title flex items-center gap-2">
+          {type === 'orders' ? (
+            <svg className="w-4 h-4 text-[#9333ea]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+          ) : (
+            <svg className="w-4 h-4 text-[#d97706]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+          )}
+          {title}
+        </div>
         <div className="table-content">
           <table className="w-full">
             <thead>
-              <tr className="bg-gray-50">
+              <tr>
                 <th className="border p-2">编号</th>
                 <th className="border p-2">长度</th>
                 <th className="border p-2">宽度</th>
@@ -306,7 +302,14 @@ export default function LayoutPage() {
             </thead>
             <tbody>
               {filteredData.map((item) => (
-                <tr key={item.id} className={type === 'orders' ? 'bg-blue-200' : 'bg-yellow-200'}>
+                <tr
+                  key={item.id}
+                  className={
+                    type === 'orders'
+                      ? 'border-l-2 border-l-accent bg-muted/60'
+                      : 'border-l-2 border-l-accent-green bg-muted/60'
+                  }
+                >
                   <td className="border p-2">{type === 'others' ? `R${item.id}` : item.id}</td>
                   <td className="border p-2">{item.length}</td>
                   <td className="border p-2">{item.width}</td>
@@ -324,37 +327,40 @@ export default function LayoutPage() {
   };
 
   if (isLoading && !layoutData) return (
-    <div className="flex items-center justify-center h-screen">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    <div className="page-gallery flex h-screen items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-hairline border-t-accent" />
     </div>
   );
 
   return (
-    <div className="max-w-7xl mx-auto my-4 p-6 bg-white">
-      {/* 通知组件 */}
+    <div className="page-gallery">
+      <div className="page-gallery-inner">
+      {/* 通知 */}
       {notification && (
-        <div className="mb-4 animate-fade-out">
-          <div className="px-4 py-2 bg-yellow-100 border-l-4 border-yellow-500 rounded">
-            <div className="flex items-center">
-              <svg className="h-5 w-5 text-yellow-500 mr-2" viewBox="0 0 20 20" fill="currentColor">
+        <div className="mb-6 animate-fade-out">
+          <div className="border border-hairline border-l-2 border-l-accent bg-muted px-4 py-3" style={{ borderRadius: 2 }}>
+            <div className="flex items-center gap-2">
+              <svg className="h-5 w-5 shrink-0 text-accent" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
                 <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
-              <p className="text-sm text-yellow-700">{notification.message}</p>
+              <p className="text-sm text-ink">{notification.message}</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* 导航按钮 */}
-      <div className="flex gap-2 mb-4">
+      {/* 导航 */}
+      <div className="mb-10 flex gap-2">
         <button 
-          className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold"
+          type="button"
+          className="btn-gallery-secondary"
           onClick={() => router.push(`/project/${projectId}`)}
         >
           项目
         </button>
         <button 
-          className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold"
+          type="button"
+          className="btn-gallery-secondary"
           onClick={() => router.push(`/layout/${projectId}`)}
         >
           切板统计
@@ -362,55 +368,55 @@ export default function LayoutPage() {
       </div>
 
       {/* 标题和分页 */}
-      <div className="flex items-center justify-between mb-4 pb-2 border-b">
-        <h1 className="text-xl font-bold">
-          {projectName || '未命名项目'} - 第 {pageNum} 页
+      <div className="mb-8 flex flex-col gap-6 border-b border-hairline pb-6 md:flex-row md:items-center md:justify-between animate-fade-in-up">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink flex items-center gap-3">
+          <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" /></svg>
+          {projectName || '未命名项目'} — 第 {pageNum} 页
         </h1>
         <div className="flex gap-2">
           <button
-            className={`px-4 py-2 rounded text-sm transition-all duration-200 ${
-              pageNum > 1
-                ? 'bg-blue-500 text-white hover:bg-blue-600'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            } ${isTransitioning ? 'opacity-50 cursor-not-allowed' : ''}`}
+            type="button"
+            className={
+              pageNum > 1 && !isTransitioning ? 'btn-gallery-primary text-sm' : 'btn-gallery-secondary text-sm'
+            }
             onClick={() => handlePageChange(pageNum - 1)}
             disabled={pageNum <= 1 || isTransitioning}
           >
-            {isTransitioning ? '加载中...' : '上一页'}
+            {isTransitioning ? '加载中…' : '上一页'}
           </button>
           <button
-            className={`px-4 py-2 rounded text-sm transition-all duration-200 ${
-              pageNum < totalPages
-                ? 'bg-blue-500 text-white hover:bg-blue-600'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            } ${isTransitioning ? 'opacity-50 cursor-not-allowed' : ''}`}
+            type="button"
+            className={
+              pageNum < totalPages && !isTransitioning ? 'btn-gallery-primary text-sm' : 'btn-gallery-secondary text-sm'
+            }
             onClick={() => handlePageChange(pageNum + 1)}
             disabled={pageNum >= totalPages || isTransitioning}
           >
-            {isTransitioning ? '加载中...' : '下一页'}
+            {isTransitioning ? '加载中…' : '下一页'}
           </button>
         </div>
       </div>
       
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="mb-8 text-sm text-ink-muted">
         使用率: {(layoutData?.rate * 100).toFixed(1)}%
       </p>
 
-      {/* 画布区域 */}
-      <div className="flex justify-center mb-6">
-        <div className={`transition-opacity duration-300 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}>
+      {/* 画布 */}
+      <div className="mb-12 flex justify-center hover-lift transition-all animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+        <div className={isTransitioning ? 'opacity-50' : ''}>
           <canvas
             ref={canvasRef}
-            className="border border-gray-300 rounded"
-            style={{ maxWidth: '100%', height: 'auto' }}
+            className="border-hairline border bg-surface shadow-sm"
+            style={{ maxWidth: '100%', height: 'auto', borderRadius: 6 }}
           />
         </div>
       </div>
 
-      {/* 表格区域 */}
-      <div className="grid grid-cols-2 gap-6">
+      {/* 表格 */}
+      <div className="grid grid-cols-1 gap-12 lg:grid-cols-2">
         {renderTable('零件信息', orders, 'orders')}
         {renderTable('常用尺寸信息', others, 'others')}
+      </div>
       </div>
     </div>
   );

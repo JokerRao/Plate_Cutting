@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 
 interface UnsavedChangesPromptProps {
   hasChanges: boolean;
@@ -9,8 +8,6 @@ interface UnsavedChangesPromptProps {
 }
 
 export default function UnsavedChangesPrompt({ hasChanges, onSave }: UnsavedChangesPromptProps) {
-  const router = useRouter();
-
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasChanges) {

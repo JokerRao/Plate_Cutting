@@ -33,7 +33,7 @@ export default function LoginPage() {
         router.push('/project')
         router.refresh()
       }
-    } catch (err) {
+    } catch {
       setMessage('登录过程中出现错误')
     }
   }
@@ -56,18 +56,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen">
-      <div className="w-full max-w-sm p-6 border rounded shadow">
-        <h2 className="mb-4 text-xl font-bold text-center">登录</h2>
+    <div className="page-gallery flex min-h-screen flex-col items-center justify-center px-4">
+      <div className="card-auth">
+        <h2 className="mb-8 text-center text-xl text-ink">登录</h2>
         <input
-          className="w-full p-2 mb-3 border rounded"
+          className="field-gallery mb-4"
           type="email"
           placeholder="邮箱"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
         <input
-          className="w-full p-2 mb-3 border rounded"
+          className="field-gallery mb-6"
           type="password"
           placeholder="密码"
           value={password}
@@ -75,18 +75,24 @@ export default function LoginPage() {
           onKeyPress={handleKeyPress}
         />
         <button
-          className="w-full p-2 text-white bg-blue-600 rounded hover:bg-blue-700"
+          type="button"
+          className="btn-gallery-primary w-full py-2.5"
           onClick={handleLogin}
         >
           登录
         </button>
         <button
-          className="w-full mt-3 text-sm text-blue-500 hover:underline"
+          type="button"
+          className="btn-gallery-link mt-5 w-full text-center text-sm text-ink-muted"
           onClick={handleResetPassword}
         >
           忘记密码？
         </button>
-        {message && <p className="mt-4 text-center text-red-500">{message}</p>}
+        {message && (
+          <p className={`mt-6 text-center text-sm leading-relaxed ${message.includes('成功') ? 'text-accent-green' : 'text-[#b42318]'}`}>
+            {message}
+          </p>
+        )}
       </div>
     </div>
   )

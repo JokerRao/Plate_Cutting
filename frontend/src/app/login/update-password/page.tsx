@@ -46,31 +46,32 @@ export default function UpdatePasswordPage() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen">
-      <div className="w-full max-w-sm p-6 border rounded shadow">
-        <h2 className="mb-4 text-xl font-bold text-center">重置密码</h2>
+    <div className="page-gallery flex min-h-screen flex-col items-center justify-center px-4">
+      <div className="card-auth">
+        <h2 className="mb-8 text-center text-xl text-ink">重置密码</h2>
         <input
-          className="w-full p-2 mb-3 border rounded"
+          className="field-gallery mb-4"
           type="password"
           placeholder="请输入新密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
         <input
-          className="w-full p-2 mb-3 border rounded"
+          className="field-gallery mb-6"
           type="password"
           placeholder="请再次输入新密码"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
         />
         <button
-          className="w-full p-2 text-white bg-green-600 rounded hover:bg-green-700"
+          type="button"
+          className="btn-gallery-green w-full py-2.5"
           onClick={handleUpdatePassword}
         >
           确认重置
         </button>
         {message && (
-          <p className={`mt-4 text-center ${message.includes('成功') ? 'text-green-500' : 'text-red-500'}`}>
+          <p className={`mt-6 text-center text-sm leading-relaxed ${message.includes('成功') ? 'text-accent-green' : 'text-[#b42318]'}`}>
             {message}
           </p>
         )}

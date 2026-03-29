@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/utils/supabaseClient'
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { useRouter } from 'next/navigation';
 
 interface Project {
@@ -27,15 +26,14 @@ interface Item {
 
 export default function ProjectPage() {
   const [projects, setProjects] = useState<Project[]>([])
-  const [selectedProject, setSelectedProject] = useState<number | null>(null)
-  const [parts, setParts] = useState<Item[]>([])
-  const [components, setComponents] = useState<Item[]>([])
-  const [dimensions, setDimensions] = useState<Item[]>([])
-  const [sortConfig, setSortConfig] = useState<{key: keyof Project, direction: 'asc' | 'desc'} | null>(null)
-  const [isEditing, setIsEditing] = useState(false);
+  // 使用 expandedProjects 管理哪些行展开
+  const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set())
   const [isCreating, setIsCreating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState<number | null>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'dateDesc' | 'dateAsc' | 'nameAsc' | 'nameDesc'>('dateDesc');
   const [selectedProjects, setSelectedProjects] = useState<Set<number>>(new Set());
-  const [isDeleting, setIsDeleting] = useState(false);
 
   const router = useRouter();
 
@@ -46,36 +44,24 @@ export default function ProjectPage() {
   const fetchProjects = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      // 用户未登录
       setProjects([]);
       return;
     }
+    
+    setUserEmail(user.email || '未知用户');
 
-    // 检查 Bridges 表
     const { data: bridgeData, error: bridgeError } = await supabase
       .from('Bridges')
       .select('uid, project_ids')
       .eq('uid', user.id)
       .maybeSingle();
 
-    if (bridgeError) {
-      // 查询出错
+    if (bridgeError || !bridgeData || !bridgeData.project_ids || bridgeData.project_ids.length === 0) {
       setProjects([]);
       return;
     }
 
-    if (!bridgeData) {
-      // 没有 Bridges 记录
-      setProjects([]);
-      return;
-    }
-
-    // 有 Bridges 记录，继续查项目
     const projectIds = bridgeData.project_ids;
-    if (!projectIds || projectIds.length === 0) {
-      setProjects([]);
-      return;
-    }
 
     const { data: projectsData, error: projectsError } = await supabase
       .from('Projects')
@@ -87,7 +73,6 @@ export default function ProjectPage() {
       return;
     }
 
-    // 按 projectIds 顺序排序
     const sortedProjects = projectIds
       .map((id: number) => projectsData.find((p: any) => p.id === id))
       .filter(Boolean);
@@ -95,60 +80,22 @@ export default function ProjectPage() {
     setProjects(sortedProjects);
   };
 
-  const handleSelectProject = (projectId: number) => {
-    setSelectedProject(projectId);
-    const project = projects.find(p => p.id === projectId);
-    if (project) {
-      setParts(Array.isArray(project.plates) ? project.plates.map((item, idx) => ({
-        id: idx + 1,
-        description: item.description ?? '',
-        length: item.length ?? 0,
-        width: item.width ?? 0,
-        quantity: item.quantity ?? 0,
-      })) : []);
-      setComponents(Array.isArray(project.orders) ? project.orders.map((item, idx) => ({
-        id: idx + 1,
-        description: item.description ?? '',
-        length: item.length ?? 0,
-        width: item.width ?? 0,
-        quantity: item.quantity ?? 0,
-      })) : []);
-      setDimensions(Array.isArray(project.others) ? project.others.map((item, idx) => ({
-        id: idx + 1,
-        description: item.description ?? '',
-        length: item.length ?? 0,
-        width: item.width ?? 0,
-        quantity: 0,
-        customer: item.client ?? '',
-      })) : []);
+  const toggleExpand = (projectId: number) => {
+    const newExpanded = new Set(expandedProjects);
+    if (newExpanded.has(projectId)) {
+      newExpanded.delete(projectId);
     } else {
-      setParts([]);
-      setComponents([]);
-      setDimensions([]);
+      newExpanded.add(projectId);
     }
+    setExpandedProjects(newExpanded);
   };
 
-  const handleCheckProject = (projectId: number, checked: boolean) => {
-    const newSelected = new Set(selectedProjects);
-    if (checked) {
-      newSelected.add(projectId);
-    } else {
-      newSelected.delete(projectId);
-    }
-    setSelectedProjects(newSelected);
-  };
+  const handleDeleteProject = async (projectId: number, e: React.MouseEvent) => {
+    e.stopPropagation(); // 阻止展开折叠
+    
+    if (!confirm('确定要删除此项目吗？')) return;
 
-  const handleDeleteProjects = async () => {
-    if (selectedProjects.size === 0) {
-      alert('请选择要删除的项目');
-      return;
-    }
-
-    if (!confirm(`确定要删除选中的 ${selectedProjects.size} 个项目吗？`)) {
-      return;
-    }
-
-    setIsDeleting(true);
+    setIsDeleting(projectId);
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -157,167 +104,173 @@ export default function ProjectPage() {
         return;
       }
 
-      // 获取当前用户的 Bridges 记录
-      const { data: bridgeData, error: bridgeError } = await supabase
+      const { data: bridgeData } = await supabase
         .from('Bridges')
         .select('project_ids')
         .eq('uid', user.id)
         .single();
 
-      if (bridgeError) {
-        throw new Error('获取项目列表失败: ' + bridgeError.message);
+      if (bridgeData) {
+        const newIds = bridgeData.project_ids.filter((id: number) => id !== projectId);
+        await supabase
+          .from('Bridges')
+          .update({ project_ids: newIds, updated_at: new Date().toISOString() })
+          .eq('uid', user.id);
       }
 
-      // 从 project_ids 中移除要删除的项目
-      const projectIds = bridgeData.project_ids.filter((id: number) => !selectedProjects.has(id));
-
-      // 更新 Bridges 表
-      const { error: updateError } = await supabase
-        .from('Bridges')
-        .update({
-          project_ids: projectIds,
-          updated_at: new Date().toISOString()
-        })
-        .eq('uid', user.id);
-
-      if (updateError) {
-        throw new Error('更新项目列表失败: ' + updateError.message);
-      }
-
-      // 删除 Projects 表中的项目
-      const { error: deleteError } = await supabase
+      await supabase
         .from('Projects')
         .delete()
-        .in('id', Array.from(selectedProjects))
+        .eq('id', projectId)
         .eq('uid', user.id);
 
-      if (deleteError) {
-        throw new Error('删除项目失败: ' + deleteError.message);
-      }
-
-      // 清除选中状态
-      setSelectedProjects(new Set());
+      setExpandedProjects(prev => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
       
-      // 如果当前选中的项目被删除，清除选中状态
-      if (selectedProject && selectedProjects.has(selectedProject)) {
-        setSelectedProject(null);
-        setParts([]);
-        setComponents([]);
-        setDimensions([]);
-      }
-
-      // 刷新项目列表
       await fetchProjects();
-
-      alert('删除成功');
     } catch (error) {
       alert(error instanceof Error ? error.message : '删除失败');
     } finally {
-      setIsDeleting(false);
+      setIsDeleting(null);
     }
   };
 
-  const handleSort = (key: keyof Project) => {
-    let direction: 'asc' | 'desc' | null = 'asc'
-    if (sortConfig && sortConfig.key === key) {
-      if (sortConfig.direction === 'asc') {
-      direction = 'desc'
-      } else if (sortConfig.direction === 'desc') {
-        direction = null
+  const handleBatchDelete = async () => {
+    if (selectedProjects.size === 0) return;
+    if (!confirm(`确定要删除选中的 ${selectedProjects.size} 个项目吗？`)) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('请先登录');
+        return;
       }
+
+      const { data: bridgeData } = await supabase
+        .from('Bridges')
+        .select('project_ids')
+        .eq('uid', user.id)
+        .single();
+
+      if (bridgeData) {
+        const newIds = bridgeData.project_ids.filter((id: number) => !selectedProjects.has(id));
+        await supabase
+          .from('Bridges')
+          .update({ project_ids: newIds, updated_at: new Date().toISOString() })
+          .eq('uid', user.id);
+      }
+
+      const idsToDelete = Array.from(selectedProjects);
+      await supabase
+        .from('Projects')
+        .delete()
+        .in('id', idsToDelete)
+        .eq('uid', user.id);
+
+      setExpandedProjects(prev => {
+        const next = new Set(prev);
+        for (const id of idsToDelete) {
+          next.delete(id);
+        }
+        return next;
+      });
+      setSelectedProjects(new Set());
+      await fetchProjects();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '批量删除失败');
     }
-    setSortConfig(direction ? { key, direction } : null)
-
-    const sortedProjects = [...projects].sort((a, b) => {
-      if (!direction) return 0;
-      if ((a[key] ?? '') < (b[key] ?? '')) return direction === 'asc' ? -1 : 1;
-      if ((a[key] ?? '') > (b[key] ?? '')) return direction === 'asc' ? 1 : -1;
-      return 0;
-    })
-    setProjects(sortedProjects)
-  }
-
-  // 拖动排序
-  const handleDragEnd = async (result: any) => {
-    if (!result.destination) return;
-
-    const items = Array.from(projects);
-    const [reorderedItem] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, reorderedItem);
-
-    setProjects(items);
-
-    // 保存新的项目 id 顺序到 Bridges
-    const newProjectIds = items.map(p => p.id);
-
-    // 获取当前用户
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    // 获取当前时间（ISO 格式）
-    const now = new Date().toISOString();
-
-    // 更新 Bridges 表
-    await supabase
-      .from('Bridges')
-      .update({
-        project_ids: newProjectIds,
-        updated_at: now,
-      })
-      .eq('uid', user.id);
   };
 
-  // 通用表格渲染
+  const toggleSelect = (projectId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = new Set(selectedProjects);
+    if (next.has(projectId)) {
+      next.delete(projectId);
+    } else {
+      next.add(projectId);
+    }
+    setSelectedProjects(next);
+  };
+
+  const filteredAndSortedProjects = projects.filter(p => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return p.name.toLowerCase().includes(q) || 
+           (p.description && p.description.toLowerCase().includes(q)) ||
+           (p.details && p.details.toLowerCase().includes(q));
+  }).sort((a, b) => {
+    switch (sortBy) {
+      case 'dateDesc': return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      case 'dateAsc': return new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+      case 'nameAsc': return a.name.localeCompare(b.name, 'zh-CN');
+      case 'nameDesc': return b.name.localeCompare(a.name, 'zh-CN');
+      default: return 0;
+    }
+  });
+
+  const toggleSelectAll = () => {
+    if (selectedProjects.size === filteredAndSortedProjects.length && filteredAndSortedProjects.length > 0) {
+      setSelectedProjects(new Set());
+    } else {
+      setSelectedProjects(new Set(filteredAndSortedProjects.map(p => p.id)));
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+  };
+
   const renderTable = (
     items: Item[],
     title: string,
     showQuantity: boolean = true,
-    showCustomer: boolean = false
+    showCustomer: boolean = false,
+    colorClass: string = "text-ink"
   ) => {
-    const rowCount = Math.max(items.length, 5);
+    if (!items || items.length === 0) {
+      return (
+        <div className="table-container shadow-sm">
+          <div className={`table-title ${colorClass} flex items-center gap-2`}>{title}</div>
+          <div className="p-4 text-center text-xs text-ink-muted bg-surface">暂无数据</div>
+        </div>
+      );
+    }
 
     return (
-      <div className="table-container">
-        <div className="table-title">{title}</div>
+      <div className="table-container shadow-sm">
+        <div className={`table-title ${colorClass} flex items-center gap-2`}>
+          {title}
+        </div>
         <div className="table-content">
           <table className="min-w-full">
             <thead>
-              <tr className="bg-gray-100">
-                <th className="border p-2">编号</th>
-                <th className="border p-2">描述</th>
-                <th className="border p-2">长度</th>
-                <th className="border p-2">宽度</th>
-                {showQuantity && (
-                  <th className="border p-2">数量</th>
-                )}
-                {showCustomer && (
-                  <th className="border p-2">客户</th>
-                )}
+              <tr>
+                <th className="border p-2 w-12 text-center">#</th>
+                <th className="border p-2">长 × 宽</th>
+                {showQuantity && <th className="border p-2 w-16 text-center">数</th>}
+                {showCustomer && <th className="border p-2 truncate max-w-[80px]">客户</th>}
+                <th className="border p-2 truncate max-w-[100px]">描述</th>
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: rowCount }).map((_, index) => {
-                const item = items[index];
-                return item ? (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="border p-2">{index + 1}</td>
-                    <td className="border p-2">{item.description || '-'}</td>
-                    <td className="border p-2">{item.length}</td>
-                    <td className="border p-2">{item.width}</td>
-                    {showQuantity && <td className="border p-2">{item.quantity}</td>}
-                    {showCustomer && <td className="border p-2">{item.customer || ''}</td>}
-                  </tr>
-                ) : (
-                  <tr key={`empty-${index}`}>
-                    <td className="border p-2">{index + 1}</td>
-                    <td className="border p-2"></td>
-                    <td className="border p-2"></td>
-                    <td className="border p-2"></td>
-                    {showQuantity && <td className="border p-2"></td>}
-                    {showCustomer && <td className="border p-2"></td>}
-                  </tr>
-                );
-              })}
+              {items.map((item, index) => (
+                <tr key={item.id || index}>
+                  <td className="border p-2 text-center text-ink-muted">{index + 1}</td>
+                  <td className="border p-2 text-ink font-mono tracking-tight">{item.length} × {item.width}</td>
+                  {showQuantity && <td className="border p-2 text-center">{item.quantity}</td>}
+                  {showCustomer && <td className="border p-2 truncate max-w-[80px]">{item.customer || '-'}</td>}
+                  <td className="border p-2 truncate max-w-[100px] text-ink-muted">{item.description || '-'}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -325,21 +278,14 @@ export default function ProjectPage() {
     );
   };
 
-  // 窗口样式
-  const windowClass = "rounded-lg shadow-lg border bg-white flex flex-col h-full";
-  const windowTitleClass = "bg-blue-600 text-white px-4 py-2 rounded-t-lg font-bold text-lg";
-
-  const handleEdit = () => {
-    setIsEditing(true);
-    if (selectedProject) {
-      window.location.href = `/project/${selectedProject}`;
-    }
+  const handleEdit = (projectId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    router.push(`/project/${projectId}`);
   };
 
-  const handleLayout = () => {
-    if (selectedProject) {
-      window.location.href = `/layout/${selectedProject}`;
-    }
+  const handleLayout = (projectId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    router.push(`/layout/${projectId}`);
   };
 
   const handleLogout = async () => {
@@ -352,11 +298,10 @@ export default function ProjectPage() {
   };
 
   const handleNew = async () => {
-    if (isCreating) return; // Prevent multiple clicks
+    if (isCreating) return;
     setIsCreating(true);
 
     try {
-      // 获取当前用户
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         alert('请先登录');
@@ -364,14 +309,9 @@ export default function ProjectPage() {
         return;
       }
 
-      // 获取所有项目名称
-      const { data: projectsData } = await supabase
-        .from('Projects')
-        .select('name');
-
+      const { data: projectsData } = await supabase.from('Projects').select('name');
       const existingNames = new Set(projectsData?.map(p => p.name) || []);
-
-      // 找到可用的名称
+      
       let i = 1;
       let newName = `new_${i}`;
       while (existingNames.has(newName)) {
@@ -379,81 +319,33 @@ export default function ProjectPage() {
         newName = `new_${i}`;
       }
 
-      // 创建新项目
-      const defaultPlates = [{
-        id: 1,
-        width: 1220,
-        length: 2440,
-        quantity: 100,
-        description: "default"
-      }];
+      const defaultPlates = [{ id: 1, width: 1220, length: 2440, quantity: 100, description: "default" }];
 
       const { data: newProject, error: projectError } = await supabase
         .from('Projects')
-        .insert([{
-          name: newName,
-          uid: user.id,
-          plates: defaultPlates,
-          orders: [],
-          others: []
-        }])
+        .insert([{ name: newName, uid: user.id, plates: defaultPlates, orders: [], others: [] }])
         .select()
         .single();
 
-      if (projectError) {
-        alert('创建项目失败: ' + projectError.message);
-        setIsCreating(false);
-        return;
-      }
+      if (projectError) throw projectError;
 
-      // 获取当前用户的 Bridges 记录
       const { data: bridgeData, error: bridgeError } = await supabase
         .from('Bridges')
-        .select('*')  // 选择所有字段以确保我们有完整的记录
+        .select('*')
         .eq('uid', user.id)
         .single();
 
-      // 准备新的 project_ids 数组
       const existingProjectIds = bridgeData?.project_ids || [];
       const newProjectIds = [...existingProjectIds, newProject.id];
       const now = new Date().toISOString();
 
-      let updateError;
       if (bridgeError?.code === 'PGRST116') {
-        // 记录不存在，创建新记录
-        const { error } = await supabase
-          .from('Bridges')
-          .insert({
-            uid: user.id,
-            project_ids: newProjectIds,
-            updated_at: now
-          });
-        updateError = error;
+        await supabase.from('Bridges').insert({ uid: user.id, project_ids: newProjectIds, updated_at: now });
       } else if (!bridgeError) {
-        // 记录存在，更新现有记录
-        const { error } = await supabase
-          .from('Bridges')
-          .update({
-            project_ids: newProjectIds,
-            updated_at: now
-          })
-          .eq('uid', user.id);
-        updateError = error;
-      } else {
-        // 其他错误
-        updateError = bridgeError;
+        await supabase.from('Bridges').update({ project_ids: newProjectIds, updated_at: now }).eq('uid', user.id);
       }
 
-      if (updateError) {
-        alert('更新项目列表失败: ' + updateError.message);
-        setIsCreating(false);
-        return;
-      }
-
-      // 成功后刷新项目列表
       await fetchProjects();
-
-      // 跳转到新项目的编辑页面
       router.push(`/project/${newProject.id}`);
     } catch (error) {
       alert('创建项目失败: ' + (error instanceof Error ? error.message : '未知错误'));
@@ -463,251 +355,230 @@ export default function ProjectPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto my-4 p-6 bg-white">
-      {/* 顶部栏 */}
-      <div className="flex justify-between items-center mb-6 pb-3 border-b">
-        <h1 className="text-xl font-bold">
-          {selectedProject ? projects.find(p => p.id === selectedProject)?.name : '未选择项目'}
-        </h1>
-        <button
-          onClick={handleLogout}
-          className="text-gray-600 hover:text-gray-800 px-4 py-2 rounded-lg flex items-center gap-2"
-        >
-          <span>退出登录</span>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H3zm11 4a1 1 0 10-2 0v4a1 1 0 102 0V7z" clipRule="evenodd" />
-            <path d="M13.293 7.293a1 1 0 011.414 0L16 8.586l1.293-1.293a1 1 0 111.414 1.414l-2 2a1 1 0 01-1.414 0l-2-2a1 1 0 010-1.414z" />
-          </svg>
-        </button>
-      </div>
+    <div className="page-gallery">
+      <div className="page-gallery-inner">
+      {/* 顶部导航区 */}
+      <div className="mb-8 flex items-center justify-between animate-fade-in-up">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+            </svg>
+            <h1 className="text-lg font-medium tracking-tight text-ink">
+              Plate Cutting
+            </h1>
+          </div>
+          <div className="h-4 w-[1px] bg-border-hairline"></div>
+        </div>
 
-      {/* 项目列表 */}
-      <div className="mb-6">
-        <div className="table-container">
-          <div className="table-title">项目列表</div>
-          <div className="table-content">
-            <div className="overflow-y-auto" style={{ maxHeight: '400px' }}>
-              <DragDropContext onDragEnd={handleDragEnd}>
-                <Droppable droppableId="projects">
-                  {(provided) => (
-                    <table className="min-w-full">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="border p-2 group relative">
-                            <div className="flex items-center justify-between">
-                              <span>编号</span>
-                              <div className="flex items-center">
-                                <span className="text-gray-400 opacity-0 group-hover:opacity-100 text-xs mr-1">可拖拽排序</span>
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                                </svg>
-                              </div>
-                            </div>
-                          </th>
-                          <th 
-                            className="border p-2 cursor-pointer hover:bg-gray-200 group relative" 
-                            onClick={() => handleSort('name')}
-                            title="点击排序"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span>名称</span>
-                              <div className="flex items-center">
-                                <span className="text-gray-400 opacity-0 group-hover:opacity-100 text-xs mr-1">点击排序</span>
-                                <span className="text-gray-500 w-4">
-                                  {sortConfig?.key === 'name' && (
-                                    sortConfig.direction === 'asc' ? '↑' : '↓'
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          </th>
-                          <th 
-                            className="border p-2 cursor-pointer hover:bg-gray-200 group relative" 
-                            onClick={() => handleSort('details')}
-                            title="点击排序"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span>详情</span>
-                              <div className="flex items-center">
-                                <span className="text-gray-400 opacity-0 group-hover:opacity-100 text-xs mr-1">点击排序</span>
-                                <span className="text-gray-500 w-4">
-                                  {sortConfig?.key === 'details' && (
-                                    sortConfig.direction === 'asc' ? '↑' : '↓'
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          </th>
-                          <th 
-                            className="border p-2 cursor-pointer hover:bg-gray-200 group relative" 
-                            onClick={() => handleSort('description')}
-                            title="点击排序"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span>描述</span>
-                              <div className="flex items-center">
-                                <span className="text-gray-400 opacity-0 group-hover:opacity-100 text-xs mr-1">点击排序</span>
-                                <span className="text-gray-500 w-4">
-                                  {sortConfig?.key === 'description' && (
-                                    sortConfig.direction === 'asc' ? '↑' : '↓'
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          </th>
-                          <th 
-                            className="border p-2 cursor-pointer hover:bg-gray-200 group relative" 
-                            onClick={() => handleSort('updated_at')}
-                            title="点击排序"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span>修改时间</span>
-                              <div className="flex items-center">
-                                <span className="text-gray-400 opacity-0 group-hover:opacity-100 text-xs mr-1">点击排序</span>
-                                <span className="text-gray-500 w-4">
-                                  {sortConfig?.key === 'updated_at' && (
-                                    sortConfig.direction === 'asc' ? '↑' : '↓'
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody {...provided.droppableProps} ref={provided.innerRef}>
-                        {(projects.length > 0
-                          ? projects
-                          : Array.from({ length: 10 }).map(() => undefined)
-                        ).map((project, index) => (
-                          project ? (
-                            <Draggable key={project.id} draggableId={String(project.id)} index={index}>
-                              {(provided) => (
-                                <tr
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  className={`hover:bg-gray-50 ${selectedProject === project.id ? 'bg-blue-50' : ''}`}
-                                  onClick={() => handleSelectProject(project.id)}
-                                >
-                                  <td
-                                    className="border p-2 cursor-move bg-gray-50 hover:bg-gray-100 group relative"
-                                    {...provided.dragHandleProps}
-                                    title="拖动排序"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                        <input
-                                          type="checkbox"
-                                          checked={selectedProjects.has(project.id)}
-                                          onChange={(e) => handleCheckProject(project.id, e.target.checked)}
-                                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                                        />
-                                        <span>{index + 1}</span>
-                                      </div>
-                                      <div className="flex items-center">
-                                        <span className="text-gray-400 opacity-0 group-hover:opacity-100 text-xs mr-1">拖动排序</span>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                                        </svg>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="border p-2">{project.name}</td>
-                                  <td className="border p-2">{project.details}</td>
-                                  <td className="border p-2">{project.description}</td>
-                                  <td className="border p-2">
-                                    {new Date(project.updated_at).toLocaleString()}
-                                  </td>
-                                </tr>
-                              )}
-                            </Draggable>
-                          ) : (
-                            <tr key={`empty-${index}`}>
-                              <td className="border p-2">{index + 1}</td>
-                              <td className="border p-2"></td>
-                              <td className="border p-2"></td>
-                              <td className="border p-2"></td>
-                              <td className="border p-2"></td>
-                            </tr>
-                          )
-                        ))}
-                        {provided.placeholder}
-                      </tbody>
-                    </table>
-                  )}
-                </Droppable>
-              </DragDropContext>
+        <div className="flex items-center gap-4">
+          <button 
+            type="button"
+            className="btn-gallery-primary flex items-center gap-1 shadow-sm"
+            onClick={handleNew}
+            disabled={isCreating}
+          >
+            {isCreating ? (
+              <svg className="h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : (
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            )}
+            新建项目
+          </button>
+
+          <div className="h-4 w-[1px] bg-border-hairline"></div>
+          
+          <div className="has-tooltip flex items-center gap-2 text-ink-muted cursor-default">
+            <svg className="w-5 h-5 bg-muted rounded-full p-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <div className="tooltip-text flex flex-col items-center gap-1">
+              <span>{userEmail || '未登录'}</span>
+              <span className="text-xs text-white/70">共 {projects.length} 个项目</span>
             </div>
           </div>
-          <div className="table-actions">
-            <div className="flex justify-end gap-2">
-              {selectedProject && (
-                <button
-                  className="bg-blue-500 text-white px-3 py-1 rounded"
-                  onClick={handleEdit}
+
+          <button onClick={handleLogout} className="has-tooltip icon-btn icon-btn-red ml-1">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            <span className="tooltip-text">退出登录</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 工具栏 */}
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in-up" style={{ animationDelay: '0.05s' }}>
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          <button 
+            type="button"
+            className="btn-gallery-ghost !p-1 !h-8 w-8 flex items-center justify-center border-hairline shrink-0"
+            onClick={toggleSelectAll}
+            title={selectedProjects.size === filteredAndSortedProjects.length && filteredAndSortedProjects.length > 0 ? "取消全选" : "全选"}
+          >
+            <input 
+              type="checkbox" 
+              checked={selectedProjects.size === filteredAndSortedProjects.length && filteredAndSortedProjects.length > 0} 
+              readOnly 
+              className="w-4 h-4 cursor-pointer accent-[#0284c7]"
+            />
+          </button>
+
+          <div className="relative shrink-0 flex-1 sm:flex-none">
+            <input 
+              type="text" 
+              placeholder="搜索项目" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="field-gallery pr-8 pl-4 !py-1.5 w-full sm:w-64 text-xs placeholder:text-[11px] text-right"
+            />
+            <svg className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </div>
+
+          {selectedProjects.size > 0 && (
+            <button 
+              type="button"
+              onClick={handleBatchDelete}
+              className="btn-gallery-danger flex items-center gap-1 text-xs py-1.5 px-3 border border-[#fecaca] bg-[#fef2f2] hover:bg-[#fee2e2] text-[#dc2626] rounded-md transition-colors whitespace-nowrap shrink-0"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              批量删除 ({selectedProjects.size})
+            </button>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-3 shrink-0 self-start sm:self-auto ml-auto sm:ml-0">
+          <span className="text-xs text-ink-muted shrink-0 whitespace-nowrap hidden sm:inline-block mr-2">共 {filteredAndSortedProjects.length} 项</span>
+          <select 
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="field-gallery !py-1.5 w-32 text-xs text-ink-muted shrink-0"
+          >
+            <option value="dateDesc">最新修改</option>
+            <option value="dateAsc">最早修改</option>
+            <option value="nameAsc">名称 (A-Z)</option>
+            <option value="nameDesc">名称 (Z-A)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* 项目列表区：一栏一栏的行列表 */}
+      <div className="space-y-3 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+        {filteredAndSortedProjects.length === 0 ? (
+          <div className="text-center py-12 text-ink-muted border border-dashed border-hairline rounded-md">
+            暂无项目，点击右上角新建。
+          </div>
+        ) : (
+          filteredAndSortedProjects.map((project) => {
+            const isExpanded = expandedProjects.has(project.id);
+            const pParts = Array.isArray(project.plates) ? project.plates.map((item, idx) => ({ ...item, id: idx + 1 })) : [];
+            const pOrders = Array.isArray(project.orders) ? project.orders.map((item, idx) => ({ ...item, id: idx + 1 })) : [];
+            const pOthers = Array.isArray(project.others) ? project.others.map((item, idx) => ({ ...item, id: idx + 1, customer: item.client, quantity: 0 })) : [];
+
+            return (
+              <div key={project.id} className="border border-hairline bg-surface rounded shadow-sm hover-lift transition-all">
+                {/* 行头区（点击展开收起） */}
+                <div 
+                  className="group flex cursor-pointer select-none items-center justify-between p-4"
+                  onClick={() => toggleExpand(project.id)}
                 >
-                  编辑
-                </button>
-              )}
-              <button 
-                className={`${isCreating ? 'bg-green-400' : 'bg-green-500'} text-white px-3 py-1 rounded flex items-center gap-2 ${isCreating ? 'cursor-not-allowed' : 'hover:bg-green-600'}`}
-                onClick={handleNew}
-                disabled={isCreating}
-              >
-                {isCreating ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    创建中...
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    新建项目
-                  </>
+                  <div className="flex flex-1 items-center gap-4 overflow-hidden">
+                    <div 
+                      className="flex h-8 w-8 shrink-0 items-center justify-center hover:bg-muted rounded transition-colors"
+                      onClick={(e) => toggleSelect(project.id, e)}
+                    >
+                      <input 
+                        type="checkbox" 
+                        checked={selectedProjects.has(project.id)}
+                        readOnly
+                        className="w-4 h-4 cursor-pointer accent-[#0284c7]"
+                      />
+                    </div>
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <h2 className="truncate text-sm font-medium text-ink max-w-[200px]">{project.name}</h2>
+                      {project.details && <span className="badge badge-gray truncate">{project.details}</span>}
+                      {project.description && (
+                        <span className="truncate text-xs text-ink-muted max-w-[300px]">
+                          {project.description}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* 日期及操作区 */}
+                  <div className="ml-4 flex shrink-0 items-center gap-4">
+                    <div className="text-xs text-ink-muted hidden sm:block has-tooltip">
+                      {formatDate(project.updated_at)}
+                      <span className="tooltip-text">{new Date(project.updated_at).toLocaleString('zh-CN')}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 opacity-80 transition-opacity group-hover:opacity-100">
+                      <button 
+                        type="button"
+                        onClick={(e) => handleEdit(project.id, e)}
+                        className="has-tooltip icon-btn icon-btn-blue"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        <span className="tooltip-text">编辑项目</span>
+                      </button>
+                    
+                    <button 
+                      type="button"
+                      onClick={(e) => handleLayout(project.id, e)}
+                      className="has-tooltip icon-btn icon-btn-green"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                      <span className="tooltip-text">切板统计</span>
+                    </button>
+
+                    <button 
+                      type="button"
+                      onClick={(e) => handleDeleteProject(project.id, e)}
+                      disabled={isDeleting === project.id}
+                      className="has-tooltip icon-btn icon-btn-red"
+                    >
+                      {isDeleting === project.id ? (
+                        <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                      ) : (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      )}
+                      <span className="tooltip-text">删除项目</span>
+                    </button>
+
+                    <div className="mx-1 h-4 w-[1px] bg-border-hairline"></div>
+
+                    {/* 折叠箭头 */}
+                    <div className="flex h-6 w-6 items-center justify-center text-ink-muted">
+                      <svg 
+                        className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} 
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                  </div>
+                </div>
+
+                {/* 展开的详情区 */}
+                {isExpanded && (
+                  <div className="animate-fade-in-up border-t border-hairline bg-muted/30 p-4" style={{ animationDuration: '0.2s' }}>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      {renderTable(pParts, '板件信息', true, false, 'text-[#0284c7]')}
+                      {renderTable(pOrders, '零件信息', true, false, 'text-[#9333ea]')}
+                      {renderTable(pOthers, '常用尺寸', false, true, 'text-[#d97706]')}
+                    </div>
+                  </div>
                 )}
-              </button>
-              {selectedProjects.size > 0 && (
-                <button
-                  className="bg-red-500 text-white px-3 py-1 rounded"
-                  onClick={handleDeleteProjects}
-                >
-                  删除选中
-                </button>
-              )}
-              {selectedProject && (
-                <button
-                  className="bg-purple-500 text-white px-3 py-1 rounded"
-                  onClick={handleLayout}
-                >
-                  切板统计
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+              </div>
+            );
+          })
+        )}
       </div>
-
-      {/* 项目详情表格 */}
-      {selectedProject && (
-        <div className="grid grid-cols-3 gap-6">
-          <div>
-            <h3 className="text-lg font-semibold mb-3">板件信息</h3>
-            {renderTable(parts, '', true)}
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold mb-3">零件信息</h3>
-            {renderTable(components, '', true)}
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold mb-3">常用尺寸信息</h3>
-            {renderTable(dimensions, '', false, true)}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   )
 }
