@@ -535,7 +535,7 @@ export default function ProjectDetailPage() {
   }
 
   const editableCellClass =
-    "border p-2 focus:outline-none focus:border-[#c5c5c7] focus:ring-0 bg-muted";
+    "border p-2 focus:outline-none focus:border-[#c5c5c7] focus:ring-0 bg-[#f8fafc] hover:bg-[#f1f5f9] transition-colors";
 
   return (
     <div className="page-gallery">
@@ -543,13 +543,13 @@ export default function ProjectDetailPage() {
       <UnsavedChangesPrompt hasChanges={hasChanges} onSave={handleSave} />
       
       {/* 导航 */}
-      <div className="mb-8 flex gap-2">
-        <span className="badge badge-gray px-3 py-1.5 text-xs font-medium cursor-default border border-hairline bg-surface shadow-sm">
+      <div className="mb-6 flex gap-2">
+        <span className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface shadow-sm text-foreground">
           项目配置
         </span>
         <button 
           type="button" 
-          className="badge badge-gray px-3 py-1.5 text-xs cursor-pointer border border-transparent bg-transparent hover:bg-muted transition-colors" 
+          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-transparent text-text-secondary hover:text-foreground hover:bg-muted transition-colors cursor-pointer" 
           onClick={handleLayoutClick}
         >
           切板统计
@@ -557,34 +557,34 @@ export default function ProjectDetailPage() {
       </div>
       
       {/* 标题与操作 */}
-      <div className="mb-10 flex flex-col gap-6 border-b border-hairline pb-6 md:flex-row md:items-start md:justify-between animate-fade-in-up">
-        <h1 className="text-xl font-medium tracking-tight text-ink flex items-center gap-2.5">
-          <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="mb-8 flex flex-col gap-6 border-b border-hairline pb-4 animate-fade-in-up md:flex-row md:items-center md:justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink flex items-center gap-3">
+          <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
           </svg>
           {projectName || '未命名项目'}
         </h1>
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="mr-3 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-            <label className={`flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1 transition-all ${optimization === 1 ? 'bg-[#e0f2fe] text-[#0284c7] font-medium' : 'hover:bg-muted'}`}>
+          <div className="mr-3 flex items-center gap-2 text-xs text-ink-muted bg-muted/50 p-1 rounded-md border border-hairline">
+            <label className={`flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 transition-all ${optimization === 1 ? 'bg-surface text-[#0284c7] font-medium shadow-sm border border-hairline' : 'hover:bg-muted text-text-secondary'}`}>
               <input
                 type="radio"
                 name="optimization"
                 value="1"
                 checked={optimization === 1}
                 onChange={() => setOptimization(1)}
-                className="accent-[#0284c7] w-3 h-3"
+                className="sr-only"
               />
               <span>优化模式</span>
             </label>
-            <label className={`flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1 transition-all ${optimization === 0 ? 'bg-[#f3e8ff] text-[#9333ea] font-medium' : 'hover:bg-muted'}`}>
+            <label className={`flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 transition-all ${optimization === 0 ? 'bg-surface text-[#9333ea] font-medium shadow-sm border border-hairline' : 'hover:bg-muted text-text-secondary'}`}>
               <input
                 type="radio"
                 name="optimization"
                 value="0"
                 checked={optimization === 0}
                 onChange={() => setOptimization(0)}
-                className="accent-[#9333ea] w-3 h-3"
+                className="sr-only"
               />
               <span>正常模式</span>
             </label>
@@ -592,36 +592,36 @@ export default function ProjectDetailPage() {
           
           <button
             type="button"
-            className="has-tooltip icon-btn icon-btn-blue shadow-sm border border-hairline bg-surface"
+            className="btn-gallery-primary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm"
             onClick={handleCutting}
             disabled={isLoading}
           >
             {isLoading ? (
-              <svg className="w-4 h-4 animate-spin text-accent" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              <svg className="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
             ) : (
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" /></svg>
             )}
-            <span className="tooltip-text">执行切板</span>
+            <span>执行切板</span>
           </button>
           
           <button 
             type="button" 
-            className="has-tooltip icon-btn icon-btn-green shadow-sm border border-hairline bg-surface" 
+            className="btn-gallery-green flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm" 
             onClick={handleSave}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
-            <span className="tooltip-text">保存更改</span>
+            <span>保存更改</span>
           </button>
           
           <div className="w-[1px] h-4 bg-border-hairline mx-1"></div>
           
           <button 
             type="button" 
-            className="has-tooltip icon-btn hover:bg-muted" 
+            className="btn-gallery-secondary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm" 
             onClick={handleBack}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            <span className="tooltip-text">返回列表</span>
+            <span>返回列表</span>
           </button>
         </div>
       </div>
@@ -721,9 +721,9 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* 数据表格 */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* 板件信息 */}
-        <div className="table-container hover-lift shadow-sm animate-fade-in-up flex flex-col h-full" style={{ animationDelay: '0.2s' }}>
+        <div className="table-container hover-lift shadow-sm animate-fade-in-up flex flex-col h-full lg:col-span-4" style={{ animationDelay: '0.2s' }}>
           <div className="table-title flex items-center gap-1.5 text-xs">
             <svg className="w-3.5 h-3.5 text-[#0284c7]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
             板件清单
@@ -818,7 +818,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* 零件信息 */}
-        <div className="table-container hover-lift shadow-sm animate-fade-in-up flex flex-col h-full" style={{ animationDelay: '0.3s' }}>
+        <div className="table-container hover-lift shadow-sm animate-fade-in-up flex flex-col h-full lg:col-span-4" style={{ animationDelay: '0.3s' }}>
           <div className="table-title flex items-center gap-1.5 text-xs">
             <svg className="w-3.5 h-3.5 text-[#9333ea]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
             待切零件
@@ -913,7 +913,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* 常用尺寸信息 */}
-        <div className="table-container hover-lift shadow-sm animate-fade-in-up flex flex-col h-full" style={{ animationDelay: '0.4s' }}>
+        <div className="table-container hover-lift shadow-sm animate-fade-in-up flex flex-col h-full lg:col-span-4" style={{ animationDelay: '0.4s' }}>
           <div className="table-title flex items-center gap-1.5 text-xs">
             <svg className="w-3.5 h-3.5 text-[#d97706]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
             常用尺寸/余料

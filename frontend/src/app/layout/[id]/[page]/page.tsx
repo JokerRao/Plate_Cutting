@@ -113,14 +113,31 @@ export default function LayoutPage() {
 
     // 计算缩放比例
     const [plateLength, plateWidth] = layoutData.plate;
-    const margin = 60;
+    // 基础边距，用于防止标注文字被裁切
+    const margin = 80;
+    
+    // 我们希望整个板材加上padding后能居中显示
+    // 首先计算可用的绘制区域大小
+    const availableWidth = canvas.width - margin * 2;
+    const availableHeight = canvas.height - margin * 2;
+    
+    // 计算缩放比例，使得板材完全填满可用区域
     const scale = Math.min(
-      (canvas.width - margin * 2) / plateLength,
-      (canvas.height - margin * 2) / plateWidth
+      availableWidth / plateLength,
+      availableHeight / plateWidth
     );
+    
+    // 计算板材在画布上的实际像素尺寸
+    const pixelPlateLength = plateLength * scale;
+    const pixelPlateWidth = plateWidth * scale;
+    
+    // 计算居中偏移量，使板材图形本身在画布上居中
+    const offsetX = (canvas.width - pixelPlateLength) / 2;
+    const offsetY = (canvas.height - pixelPlateWidth) / 2;
 
-    // 坐标系变换：原点移到左下角，Y轴向上
-    ctx.translate(margin, canvas.height - margin);
+    // 坐标系变换：原点移到左下角，Y轴向上，并应用居中偏移
+    // 我们将原点移动到板材左下角的实际像素位置
+    ctx.translate(offsetX, canvas.height - offsetY);
     ctx.scale(1, -1);
 
     // 绘制坐标轴
@@ -328,7 +345,7 @@ export default function LayoutPage() {
 
   if (isLoading && !layoutData) return (
     <div className="page-gallery flex h-screen items-center justify-center">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-hairline border-t-accent" />
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-hairline border-t-accent" />
     </div>
   );
 
@@ -350,49 +367,65 @@ export default function LayoutPage() {
       )}
 
       {/* 导航 */}
-      <div className="mb-10 flex gap-2">
+      <div className="mb-6 flex gap-2">
         <button 
           type="button"
-          className="btn-gallery-secondary"
+          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-transparent text-text-secondary hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
           onClick={() => router.push(`/project/${projectId}`)}
         >
-          项目
+          项目配置
         </button>
         <button 
           type="button"
-          className="btn-gallery-secondary"
+          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-transparent text-text-secondary hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
           onClick={() => router.push(`/layout/${projectId}`)}
         >
           切板统计
         </button>
+        <span className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface shadow-sm text-foreground">
+          板材切割
+        </span>
       </div>
 
       {/* 标题和分页 */}
-      <div className="mb-8 flex flex-col gap-6 border-b border-hairline pb-6 md:flex-row md:items-center md:justify-between animate-fade-in-up">
+      <div className="mb-8 flex flex-col gap-6 border-b border-hairline pb-4 md:flex-row md:items-center md:justify-between animate-fade-in-up">
         <h1 className="text-2xl font-semibold tracking-tight text-ink flex items-center gap-3">
           <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" /></svg>
           {projectName || '未命名项目'} — 第 {pageNum} 页
         </h1>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className={
-              pageNum > 1 && !isTransitioning ? 'btn-gallery-primary text-sm' : 'btn-gallery-secondary text-sm'
-            }
-            onClick={() => handlePageChange(pageNum - 1)}
-            disabled={pageNum <= 1 || isTransitioning}
+        <div className="flex items-center gap-4">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={
+                pageNum > 1 && !isTransitioning ? 'btn-gallery-primary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm' : 'btn-gallery-secondary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm'
+              }
+              onClick={() => handlePageChange(pageNum - 1)}
+              disabled={pageNum <= 1 || isTransitioning}
+            >
+              {isTransitioning ? '加载中…' : '上一页'}
+            </button>
+            <button
+              type="button"
+              className={
+                pageNum < totalPages && !isTransitioning ? 'btn-gallery-primary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm' : 'btn-gallery-secondary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm'
+              }
+              onClick={() => handlePageChange(pageNum + 1)}
+              disabled={pageNum >= totalPages || isTransitioning}
+            >
+              {isTransitioning ? '加载中…' : '下一页'}
+            </button>
+          </div>
+          
+          <div className="h-4 w-[1px] bg-border-hairline hidden md:block"></div>
+          
+          <button 
+            type="button" 
+            className="btn-gallery-secondary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm hidden md:flex" 
+            onClick={() => router.push('/project')}
           >
-            {isTransitioning ? '加载中…' : '上一页'}
-          </button>
-          <button
-            type="button"
-            className={
-              pageNum < totalPages && !isTransitioning ? 'btn-gallery-primary text-sm' : 'btn-gallery-secondary text-sm'
-            }
-            onClick={() => handlePageChange(pageNum + 1)}
-            disabled={pageNum >= totalPages || isTransitioning}
-          >
-            {isTransitioning ? '加载中…' : '下一页'}
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            <span>返回列表</span>
           </button>
         </div>
       </div>
@@ -402,18 +435,18 @@ export default function LayoutPage() {
       </p>
 
       {/* 画布 */}
-      <div className="mb-12 flex justify-center hover-lift transition-all animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+      <div className="mb-10 flex justify-center hover-lift transition-all animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
         <div className={isTransitioning ? 'opacity-50' : ''}>
           <canvas
             ref={canvasRef}
-            className="border-hairline border bg-surface shadow-sm"
+            className="border-hairline border bg-surface shadow-sm w-full"
             style={{ maxWidth: '100%', height: 'auto', borderRadius: 6 }}
           />
         </div>
       </div>
 
       {/* 表格 */}
-      <div className="grid grid-cols-1 gap-12 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {renderTable('零件信息', orders, 'orders')}
         {renderTable('常用尺寸信息', others, 'others')}
       </div>

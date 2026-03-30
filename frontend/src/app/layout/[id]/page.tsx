@@ -143,33 +143,43 @@ export default function LayoutStatsPage() {
   }, [projectId]);
 
   return (
-    <div className="page-gallery flex min-h-screen flex-col">
-      <div className="page-gallery-inner flex max-h-[92vh] min-h-0 flex-1 flex-col border border-hairline bg-surface" style={{ borderRadius: 2 }}>
+    <div className="page-gallery">
+      <div className="page-gallery-inner">
       {/* 导航 */}
-      <div className="flex items-center px-6 pt-8">
-        <div className="mb-6 flex gap-2">
-          <button 
-            type="button"
-            className="btn-gallery-secondary"
-            onClick={() => router.push(`/project/${projectId}`)}
-          >
-            项目
-          </button>
-          <span className="btn-gallery-secondary-active">切板统计</span>
-        </div>
+      <div className="mb-6 flex gap-2">
+        <button 
+          type="button"
+          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-transparent text-text-secondary hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+          onClick={() => router.push(`/project/${projectId}`)}
+        >
+          项目配置
+        </button>
+        <span className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface shadow-sm text-foreground">
+          切板统计
+        </span>
       </div>
 
       {/* 项目名称 */}
-      <div className="border-b border-hairline px-6 pb-4 animate-fade-in-up">
+      <div className="mb-8 border-b border-hairline pb-4 flex items-center justify-between animate-fade-in-up">
         <h1 className="text-2xl font-semibold tracking-tight text-ink flex items-center gap-3">
           <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
           {projectName || '未命名项目'}
         </h1>
+        <div className="flex gap-2">
+          <button 
+            type="button" 
+            className="btn-gallery-secondary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm" 
+            onClick={() => router.push('/project')}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            <span>返回列表</span>
+          </button>
+        </div>
       </div>
 
       {/* 切板统计 */}
-      <div className="min-h-0 flex-1 overflow-auto p-6 md:p-8">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {cutted.map((item, index) => {
             const colorIndex = getPageColorIndex(index);
             const { bg, text } = COLOR_POOL[colorIndex];

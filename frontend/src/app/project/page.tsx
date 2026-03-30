@@ -358,23 +358,22 @@ export default function ProjectPage() {
     <div className="page-gallery">
       <div className="page-gallery-inner">
       {/* 顶部导航区 */}
-      <div className="mb-8 flex items-center justify-between animate-fade-in-up">
+      <div className="mb-8 border-b border-hairline pb-4 flex items-center justify-between animate-fade-in-up">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
             </svg>
-            <h1 className="text-lg font-medium tracking-tight text-ink">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">
               Plate Cutting
             </h1>
           </div>
-          <div className="h-4 w-[1px] bg-border-hairline"></div>
         </div>
 
         <div className="flex items-center gap-4">
           <button 
             type="button"
-            className="btn-gallery-primary flex items-center gap-1 shadow-sm"
+            className="btn-gallery-primary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm"
             onClick={handleNew}
             disabled={isCreating}
           >
