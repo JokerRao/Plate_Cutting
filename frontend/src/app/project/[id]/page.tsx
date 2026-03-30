@@ -5,11 +5,63 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/utils/supabaseClient';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import UnsavedChangesPrompt from '@/components/UnsavedChangesPrompt';
+import GalleryToast from '@/components/GalleryToast';
+import ProjectLayoutNavPills, { ProjectListNavButton } from '@/components/ProjectLayoutNavPills';
+import { useAppDialog } from '@/components/AppDialog';
 import { getApiUrl } from '@/config/api';
+
+/** 用于脏检查：对每个对象的键排序后再序列化，避免 JSON.stringify 键序不一致导致误判「有未保存更改」 */
+function stableStringifyForDirtyCheck(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value) ?? 'null';
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringifyForDirtyCheck).join(',')}]`;
+  }
+  const o = value as Record<string, unknown>;
+  const keys = Object.keys(o).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringifyForDirtyCheck(o[k])}`).join(',')}}`;
+}
+
+/** 与切板算法相关的数据签名（不含板件/零件说明；常用尺寸不含客户与说明） */
+function buildCuttingSignature(
+  sawBlade: number,
+  plates: any[],
+  orders: any[],
+  others: any[]
+): string {
+  const n = (x: unknown) => {
+    const v = Number(x);
+    return Number.isFinite(v) ? v : 0;
+  };
+  return JSON.stringify({
+    saw: n(sawBlade),
+    plates: plates.map((row) => ({
+      id: row.id,
+      length: n(row.length),
+      width: n(row.width),
+      q: n(row.quantity ?? 1),
+    })),
+    orders: orders.map((row) => ({
+      id: row.id,
+      length: n(row.length),
+      width: n(row.width),
+      q: n(row.quantity ?? 1),
+    })),
+    others: others.map((row) => ({
+      id: row.id,
+      length: n(row.length),
+      width: n(row.width),
+      q: n(row.quantity ?? 0),
+    })),
+  });
+}
 
 export default function ProjectDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { alert: dialogAlert, confirm: dialogConfirm } = useAppDialog();
   const projectId = params.id as string;
   const [userId, setUserId] = useState<string | null>(null);
   const [project, setProject] = useState<any>(null);
@@ -26,14 +78,45 @@ export default function ProjectDetailPage() {
     index: number;
     cells: HTMLTableCellElement[];
   } | null>(null);
-  const [optimization, setOptimization] = useState<number>(1);
+  const [optimization, setOptimization] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [galleryToast, setGalleryToast] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<'loading' | 'error' | 'ready'>('loading');
+  const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
+
+  const showGalleryToast = useCallback((msg: string) => {
+    setGalleryToast(msg);
+  }, []);
+
+  useEffect(() => {
+    if (!galleryToast) return;
+    const id = window.setTimeout(() => setGalleryToast(null), 2400);
+    return () => window.clearTimeout(id);
+  }, [galleryToast]);
 
   useEffect(() => {
     const fetchData = async () => {
+      if (!projectId) {
+        setLoadState('error');
+        setLoadErrorMessage('无效的项目链接');
+        setProject(null);
+        setInitialData(null);
+        return;
+      }
+      setLoadState('loading');
+      setLoadErrorMessage(null);
       const { data: { user } } = await supabase.auth.getUser();
       setUserId(user?.id ?? null);
-      const { data } = await supabase.from('Projects').select('*').eq('id', projectId).single();
+      setUserEmail(user?.email || '未知用户');
+      const { data, error } = await supabase.from('Projects').select('*').eq('id', projectId).single();
+      if (error || !data) {
+        setLoadState('error');
+        setLoadErrorMessage(error?.message ?? '未找到该项目或无权访问');
+        setProject(null);
+        setInitialData(null);
+        return;
+      }
       setProject(data);
       setPlates(data.plates || []);
       setOrders(data.orders || []);
@@ -47,33 +130,59 @@ export default function ProjectDetailPage() {
         details: data.details || '',
         description: data.description || '',
         saw_blade: data.saw_blade || 0,
-        plates: JSON.stringify(data.plates || []),
-        orders: JSON.stringify(data.orders || []),
-        others: JSON.stringify(data.others || []),
+        plates: stableStringifyForDirtyCheck(data.plates || []),
+        orders: stableStringifyForDirtyCheck(data.orders || []),
+        others: stableStringifyForDirtyCheck(data.others || []),
       });
+      setLoadState('ready');
     };
-    if (projectId) fetchData();
+    void fetchData();
   }, [projectId]);
 
-  const hasChanges = useMemo(
-    () =>
-      projectName !== initialData?.name ||
-      projectDetails !== initialData?.details ||
-      projectDescription !== initialData?.description ||
-      sawBlade !== initialData?.saw_blade ||
-      JSON.stringify(plates) !== initialData?.plates ||
-      JSON.stringify(orders) !== initialData?.orders ||
-      JSON.stringify(others) !== initialData?.others,
-    [
-      initialData,
-      projectName,
-      projectDetails,
-      projectDescription,
-      sawBlade,
-      plates,
-      orders,
-      others,
-    ]
+  const hasChanges = useMemo(() => {
+    // 未拉取到基准快照前不能视为「有改动」，否则 beforeunload 与返回列表等逻辑会误判
+    if (!initialData) return false;
+    return (
+      projectName !== initialData.name ||
+      projectDetails !== initialData.details ||
+      projectDescription !== initialData.description ||
+      sawBlade !== initialData.saw_blade ||
+      stableStringifyForDirtyCheck(plates) !== initialData.plates ||
+      stableStringifyForDirtyCheck(orders) !== initialData.orders ||
+      stableStringifyForDirtyCheck(others) !== initialData.others
+    );
+  }, [
+    initialData,
+    projectName,
+    projectDetails,
+    projectDescription,
+    sawBlade,
+    plates,
+    orders,
+    others,
+  ]);
+
+  const projectHasCutResults = useMemo(() => {
+    const c = project?.cutted;
+    if (!Array.isArray(c) || c.length < 2) return false;
+    return c.slice(0, -1).length > 0;
+  }, [project]);
+
+  const savedCuttingSignature = useMemo(() => {
+    if (!initialData) return '';
+    try {
+      const p = JSON.parse(initialData.plates) as any[];
+      const o = JSON.parse(initialData.orders) as any[];
+      const ot = JSON.parse(initialData.others) as any[];
+      return buildCuttingSignature(initialData.saw_blade, p, o, ot);
+    } catch {
+      return '';
+    }
+  }, [initialData]);
+
+  const currentCuttingSignature = useMemo(
+    () => buildCuttingSignature(sawBlade, plates, orders, others),
+    [sawBlade, plates, orders, others]
   );
 
   const validatePositiveInteger = (value: string): boolean => {
@@ -91,7 +200,7 @@ export default function ProjectDetailPage() {
     return Number.isFinite(num) && num > 0 ? num : fallback;
   };
 
-  const validateData = useCallback(() => {
+  const validateData = useCallback(async (): Promise<boolean> => {
     const validateArray = (arr: any[]) => {
       return arr.every(item => 
         validatePositiveInteger(item.length.toString()) && 
@@ -100,35 +209,224 @@ export default function ProjectDetailPage() {
       );
     };
 
+    /** 常用尺寸无数量列，行内 quantity 常为 0，不得与板件/零件共用带 quantity 的校验 */
+    const validateOthersRows = (arr: any[]) => {
+      return arr.every((item) =>
+        validatePositiveInteger(String(item.length ?? '')) &&
+        validatePositiveInteger(String(item.width ?? ''))
+      );
+    };
+
     if (!validatePositiveNumber(sawBlade.toString())) {
-      alert('锯片宽度必须为正数（可包含小数）');
+      await dialogAlert('锯片宽度必须为正数（可包含小数）', '提示');
       return false;
     }
 
     if (!validateArray(plates)) {
-      alert('板件信息中的长度、宽度和数量必须为正整数');
+      await dialogAlert('板件信息中的长度、宽度和数量必须为正整数', '提示');
       return false;
     }
 
     if (!validateArray(orders)) {
-      alert('零件信息中的长度、宽度和数量必须为正整数');
+      await dialogAlert('零件信息中的长度、宽度和数量必须为正整数', '提示');
       return false;
     }
 
-    if (!validateArray(others)) {
-      alert('常用尺寸信息中的长度、宽度必须为正整数');
+    if (!validateOthersRows(others)) {
+      await dialogAlert('常用尺寸信息中的长度、宽度必须为正整数', '提示');
       return false;
     }
 
     return true;
-  }, [sawBlade, plates, orders, others]);
+  }, [sawBlade, plates, orders, others, dialogAlert]);
 
-  const handleSave = useCallback(async () => {
-    if (!validateData()) {
-      return;
+  const rollbackFormFromInitial = useCallback(() => {
+    if (!initialData) return;
+    setProjectName(initialData.name);
+    setProjectDetails(initialData.details);
+    setProjectDescription(initialData.description);
+    setSawBlade(initialData.saw_blade);
+    try {
+      setPlates(JSON.parse(initialData.plates));
+      setOrders(JSON.parse(initialData.orders));
+      setOthers(JSON.parse(initialData.others));
+    } catch {
+      setPlates([]);
+      setOrders([]);
+      setOthers([]);
+    }
+  }, [initialData]);
+
+  const runCuttingPipeline = useCallback(
+    async (includeNavigation: boolean): Promise<boolean> => {
+      if (!userId) {
+        await dialogAlert('请先登录', '提示');
+        return false;
+      }
+      if (!(await validateData())) return false;
+      if (plates.length === 0 || orders.length === 0) {
+        await dialogAlert('请添加板材和零件信息', '提示');
+        return false;
+      }
+
+      setIsLoading(true);
+      try {
+        const { error: updateError } = await supabase
+          .from('Projects')
+          .update({
+            name: projectName,
+            details: projectDetails,
+            description: projectDescription,
+            plates,
+            orders,
+            others,
+            saw_blade: sawBlade,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', projectId)
+          .eq('uid', userId);
+
+        if (updateError) throw updateError;
+
+        const response = await fetch(getApiUrl('OPTIMIZE'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: userId,
+            project_id: projectId,
+            plates,
+            orders,
+            others,
+            optimization: Boolean(optimization),
+            saw_blade: Number(sawBlade) || 4,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (data.code === 0) {
+          const { error: cutError } = await supabase
+            .from('Projects')
+            .update({
+              cutted: data.cutting_plans,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', projectId)
+            .eq('uid', userId);
+
+          if (cutError) throw cutError;
+
+          const now = new Date().toISOString();
+          setProject((prev) => ({
+            ...prev,
+            name: projectName,
+            details: projectDetails,
+            description: projectDescription,
+            saw_blade: sawBlade,
+            plates,
+            orders,
+            others,
+            cutted: data.cutting_plans,
+            updated_at: now,
+          }));
+
+          setInitialData({
+            name: projectName,
+            details: projectDetails,
+            description: projectDescription,
+            saw_blade: sawBlade,
+            plates: JSON.stringify(plates),
+            orders: JSON.stringify(orders),
+            others: JSON.stringify(others),
+          });
+
+          if (includeNavigation) {
+            await dialogAlert('板件、零件和其他尺寸信息已保存', '保存成功');
+            router.push(`/layout/${projectId}/1`);
+          } else {
+            await dialogAlert('已重新切板并保存', '保存成功');
+          }
+          return true;
+        }
+        throw new Error(data.message || '切板失败');
+      } catch (error: unknown) {
+        const msg =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'object' &&
+                error !== null &&
+                'message' in error &&
+                typeof (error as { message: string }).message === 'string'
+              ? (error as { message: string }).message
+              : '切板失败';
+        await dialogAlert(msg, '切板失败');
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [
+      userId,
+      validateData,
+      plates,
+      orders,
+      others,
+      sawBlade,
+      projectName,
+      projectDetails,
+      projectDescription,
+      projectId,
+      optimization,
+      router,
+      dialogAlert,
+    ]
+  );
+
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!(await validateData())) {
+      return false;
     }
 
-    const { error } = await supabase.from('Projects').update({
+    const cuttingDirty =
+      projectHasCutResults && currentCuttingSignature !== savedCuttingSignature;
+
+    if (cuttingDirty) {
+      const ok = await dialogConfirm(
+        '您已修改会影响切板结果的数据（锯片宽度、板件清单、待切零件、常用尺寸等）。\n' +
+          '在已有切板方案的情况下，保存前必须重新执行切板，否则无法保存。\n\n' +
+          '确定：重新切板并保存全部数据\n取消：放弃本次修改，恢复为上次保存的内容',
+        '保存前确认'
+      );
+      if (!ok) {
+        rollbackFormFromInitial();
+        return false;
+      }
+      return runCuttingPipeline(false);
+    }
+
+    const { error } = await supabase
+      .from('Projects')
+      .update({
+        name: projectName,
+        details: projectDetails,
+        description: projectDescription,
+        saw_blade: sawBlade,
+        plates,
+        orders,
+        others,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', projectId)
+      .eq('uid', userId);
+
+    if (error) {
+      await dialogAlert('保存失败: ' + error.message, '保存失败');
+      return false;
+    }
+
+    const now = new Date().toISOString();
+    setProject((prev) => ({
+      ...prev,
       name: projectName,
       details: projectDetails,
       description: projectDescription,
@@ -136,29 +434,28 @@ export default function ProjectDetailPage() {
       plates,
       orders,
       others,
-      updated_at: new Date().toISOString()
-    }).eq('id', projectId).eq('uid', userId);
-
-    if (error) {
-      alert('保存失败: ' + error.message);
-    } else {
-      setProject(prev => ({
-        ...prev,
-        updated_at: new Date().toISOString()
-      }));
-      setInitialData({
-        name: projectName,
-        details: projectDetails,
-        description: projectDescription,
-        saw_blade: sawBlade,
-        plates: JSON.stringify(plates),
-        orders: JSON.stringify(orders),
-        others: JSON.stringify(others),
-      });
-      alert('保存成功');
-    }
+      updated_at: now,
+    }));
+    setInitialData({
+      name: projectName,
+      details: projectDetails,
+      description: projectDescription,
+      saw_blade: sawBlade,
+      plates: stableStringifyForDirtyCheck(plates),
+      orders: stableStringifyForDirtyCheck(orders),
+      others: stableStringifyForDirtyCheck(others),
+    });
+    await dialogAlert('保存成功', '保存成功');
+    return true;
   }, [
     validateData,
+    dialogConfirm,
+    dialogAlert,
+    projectHasCutResults,
+    currentCuttingSignature,
+    savedCuttingSignature,
+    rollbackFormFromInitial,
+    runCuttingPipeline,
     projectId,
     userId,
     projectName,
@@ -177,37 +474,28 @@ export default function ProjectDetailPage() {
     }
   }, [hasChanges]);
 
-  const handleRouteChange = useCallback(() => {
-    if (hasChanges) {
-      if (!window.confirm('有未保存的更改，是否保存？')) {
-        return;
-      }
-      void handleSave();
-    }
-  }, [hasChanges, handleSave]);
-
   useEffect(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
-
-    const handleNavigation = () => {
-      handleRouteChange();
-    };
-
-    window.addEventListener('popstate', handleNavigation);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('popstate', handleNavigation);
-    };
-  }, [handleBeforeUnload, handleRouteChange]);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [handleBeforeUnload]);
 
   const handleBack = async () => {
     if (hasChanges) {
-      if (window.confirm('有未保存的更改，是否保存？')) {
-        await handleSave();
+      if (await dialogConfirm('有未保存的更改，是否保存？', '未保存的更改')) {
+        const ok = await handleSave();
+        if (!ok) return;
       }
     }
     router.push('/project');
+  };
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (!error) {
+      router.push('/login');
+    } else {
+      await dialogAlert('退出登录失败: ' + error.message, '退出失败');
+    }
   };
 
   const handleCellChange = (type: 'plates' | 'orders' | 'others', rowIndex: number, field: string, value: any) => {
@@ -227,6 +515,88 @@ export default function ProjectDetailPage() {
         setOthers(setValue);
         break;
     }
+  };
+
+  /** 焦点在可编辑单元格内时应交给浏览器处理复制/粘贴，避免整行 JSON 逻辑抢快捷键 */
+  const isEventFromEditableCell = (target: EventTarget | null) => {
+    const el = target as HTMLElement | null;
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    return Boolean(el.closest('td[contenteditable="true"]'));
+  };
+
+  /** 从剪贴板 JSON 解析为可合并进当前行的字段（拒绝无关 JSON） */
+  const parsePastedRowFields = (
+    text: string,
+    kind: 'plates' | 'orders' | 'others'
+  ): Record<string, unknown> | null => {
+    const t = text.trim();
+    if (!t.startsWith('{')) return null;
+    let o: unknown;
+    try {
+      o = JSON.parse(t);
+    } catch {
+      return null;
+    }
+    if (typeof o !== 'object' || o === null || Array.isArray(o)) return null;
+    const r = o as Record<string, unknown>;
+    const num = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : NaN;
+    };
+    if (kind === 'plates' || kind === 'orders') {
+      const length = num(r.length);
+      const width = num(r.width);
+      if (!Number.isFinite(length) || !Number.isFinite(width)) return null;
+      const quantity = r.quantity != null ? num(r.quantity) : 1;
+      if (!Number.isFinite(quantity)) return null;
+      return {
+        length,
+        width,
+        quantity,
+        description: typeof r.description === 'string' ? r.description : '',
+      };
+    }
+    const length = num(r.length);
+    const width = num(r.width);
+    if (!Number.isFinite(length) || !Number.isFinite(width)) return null;
+    const quantity = r.quantity != null ? num(r.quantity) : 0;
+    if (!Number.isFinite(quantity)) return null;
+    return {
+      length,
+      width,
+      quantity,
+      client: typeof r.client === 'string' ? r.client : '',
+      description: typeof r.description === 'string' ? r.description : '',
+    };
+  };
+
+  const duplicateRow = (type: 'plates' | 'orders' | 'others', index: number) => {
+    const row = type === 'plates' ? plates[index] : type === 'orders' ? orders[index] : others[index];
+    if (!row) return;
+    const clone = {
+      ...row,
+      description: row.description ?? '',
+      ...(type === 'others' && { client: row.client ?? '', quantity: row.quantity ?? 0 }),
+    };
+    const insertAt = (prev: any[]) => {
+      const next = [...prev];
+      next.splice(index + 1, 0, { ...clone });
+      return next.map((item, i) => ({ ...item, id: i + 1 }));
+    };
+    switch (type) {
+      case 'plates':
+        setPlates(insertAt);
+        break;
+      case 'orders':
+        setOrders(insertAt);
+        break;
+      case 'others':
+        setOthers(insertAt);
+        break;
+    }
+    const tableLabel = type === 'plates' ? '板件清单' : type === 'orders' ? '待切零件' : '常用尺寸/余料';
+    showGalleryToast(`已在「${tableLabel}」中插入相同一行`);
   };
 
   const handleRowClick = (type: 'plates' | 'orders' | 'others', index: number, e: React.MouseEvent) => {
@@ -335,40 +705,47 @@ export default function ProjectDetailPage() {
     }
 
     if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+      if (isEventFromEditableCell(e.target)) return;
       e.preventDefault();
       const { type, index } = selectedRow;
-      const data = type === 'plates' ? plates[index] :
-                   type === 'orders' ? orders[index] :
-                   others[index];
+      const data = type === 'plates' ? plates[index] : type === 'orders' ? orders[index] : others[index];
+      if (!data) return;
       const { id: _omittedId, ...copyData } = data;
-      await navigator.clipboard.writeText(JSON.stringify(copyData));
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(copyData));
+        showGalleryToast('已复制整行数据到剪贴板（JSON）');
+      } catch (err) {
+        console.error('复制失败', err);
+        showGalleryToast('复制失败，请检查剪贴板权限或浏览器设置');
+      }
     }
 
     if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-      e.preventDefault();
+      if (isEventFromEditableCell(e.target)) return;
+      let text: string;
       try {
-        const { type, index } = selectedRow;
-        const text = await navigator.clipboard.readText();
-        const pasteData = JSON.parse(text);
-        
-        const setValue = (prev: any[]) => 
-          prev.map((row, idx) => 
-            idx === index ? { ...row, ...pasteData } : row
-          );
+        text = await navigator.clipboard.readText();
+      } catch {
+        return;
+      }
+      const { type, index } = selectedRow;
+      const fields = parsePastedRowFields(text, type);
+      if (!fields) return;
 
-        switch (type) {
-          case 'plates':
-            setPlates(setValue);
-            break;
-          case 'orders':
-            setOrders(setValue);
-            break;
-          case 'others':
-            setOthers(setValue);
-            break;
-        }
-      } catch (error) {
-        console.error('剪贴板读取错误: ', error);
+      e.preventDefault();
+      const setValue = (prev: any[]) =>
+        prev.map((row, idx) => (idx === index ? { ...row, ...fields, id: row.id } : row));
+
+      switch (type) {
+        case 'plates':
+          setPlates(setValue);
+          break;
+        case 'orders':
+          setOrders(setValue);
+          break;
+        case 'others':
+          setOthers(setValue);
+          break;
       }
     }
   };
@@ -423,90 +800,11 @@ export default function ProjectDetailPage() {
     if (data?.cutted && data.cutted.length > 0) {
       router.push(`/layout/${projectId}/1`);
     } else {
-      alert('请先进行切板操作');
+      await dialogAlert('请先进行切板操作', '提示');
     }
   };
 
-  const handleCutting = async () => {
-    if (!userId) {
-      alert('请先登录');
-      return;
-    }
-
-    if (!validateData()) {
-      return;
-    }
-
-    if (plates.length === 0 || orders.length === 0) {
-      alert('请添加板材和零件信息');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const { error: updateError } = await supabase
-        .from('Projects')
-        .update({
-          plates,
-          orders,
-          others,
-          saw_blade: sawBlade,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', projectId);
-
-      if (updateError) throw updateError;
-
-      setProject(prev => ({
-        ...prev,
-        updated_at: new Date().toISOString()
-      }));
-
-      const response = await fetch(getApiUrl('OPTIMIZE'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          uid: userId,
-          project_id: projectId,
-          plates,
-          orders,
-          others,
-          optimization: Boolean(optimization),
-          saw_blade: Number(sawBlade) || 4
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.code === 0) {
-        const { error: cutError } = await supabase
-          .from('Projects')
-          .update({
-            cutted: data.cutting_plans,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', projectId);
-
-        if (cutError) throw cutError;
-
-        setProject(prev => ({
-          ...prev,
-          updated_at: new Date().toISOString()
-        }));
-
-        alert('板件、零件和其他尺寸信息已保存');
-        router.push(`/layout/${projectId}/1`);
-      } else {
-        throw new Error(data.message || '切板失败');
-      }
-    } catch (error: any) {
-      alert(error.message || '切板失败');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const handleCutting = () => void runCuttingPipeline(true);
 
   const handleOthersDragEnd = (result: any) => {
     if (!result.destination) return;
@@ -523,7 +821,7 @@ export default function ProjectDetailPage() {
     setOthers(updatedItems);
   };
 
-  if (!project) {
+  if (loadState === 'loading') {
     return (
       <div className="page-gallery flex min-h-screen items-center justify-center text-ink-muted">
         <div className="flex items-center gap-3">
@@ -534,65 +832,158 @@ export default function ProjectDetailPage() {
     );
   }
 
+  if (loadState === 'error') {
+    return (
+      <div className="page-gallery flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center text-ink-muted">
+        <p className="max-w-md text-sm text-ink">{loadErrorMessage ?? '加载失败'}</p>
+        <button
+          type="button"
+          className="btn-gallery-primary inline-flex h-9 items-center px-4 text-xs shadow-sm"
+          onClick={() => router.push('/project')}
+        >
+          返回项目列表
+        </button>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="page-gallery flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center text-ink-muted">
+        <p className="text-sm text-ink">项目数据异常</p>
+        <button
+          type="button"
+          className="btn-gallery-primary inline-flex h-9 items-center px-4 text-xs shadow-sm"
+          onClick={() => router.push('/project')}
+        >
+          返回项目列表
+        </button>
+      </div>
+    );
+  }
+
   const editableCellClass =
     "border p-2 focus:outline-none focus:border-[#c5c5c7] focus:ring-0 bg-[#f8fafc] hover:bg-[#f1f5f9] transition-colors";
 
   return (
     <div className="page-gallery">
       <div className="page-gallery-inner">
-      <UnsavedChangesPrompt hasChanges={hasChanges} onSave={handleSave} />
-      
-      {/* 导航 */}
-      <div className="mb-6 flex gap-2">
-        <span className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface shadow-sm text-foreground">
-          项目配置
-        </span>
-        <button 
-          type="button" 
-          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-transparent text-text-secondary hover:text-foreground hover:bg-muted transition-colors cursor-pointer" 
-          onClick={handleLayoutClick}
-        >
-          切板统计
-        </button>
-      </div>
-      
-      {/* 标题与操作 */}
-      <div className="mb-8 flex flex-col gap-6 border-b border-hairline pb-4 animate-fade-in-up md:flex-row md:items-center md:justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-ink flex items-center gap-3">
-          <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-          {projectName || '未命名项目'}
-        </h1>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="mr-3 flex items-center gap-2 text-xs text-ink-muted bg-muted/50 p-1 rounded-md border border-hairline">
-            <label className={`flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 transition-all ${optimization === 1 ? 'bg-surface text-[#0284c7] font-medium shadow-sm border border-hairline' : 'hover:bg-muted text-text-secondary'}`}>
-              <input
-                type="radio"
-                name="optimization"
-                value="1"
-                checked={optimization === 1}
-                onChange={() => setOptimization(1)}
-                className="sr-only"
+      <UnsavedChangesPrompt hasChanges={hasChanges} />
+      <GalleryToast message={galleryToast} />
+
+      {/* 顶栏：① 左标题 | 右：当前 + 项目列表 + 用户 ② 左优化+切板+保存 | 右导航 */}
+      <div className="mb-5 animate-fade-in-up border-b border-hairline pb-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <h1 className="flex min-w-0 items-center gap-2 text-xl font-semibold tracking-tight text-ink sm:gap-3 sm:text-2xl">
+            <svg className="h-5 w-5 shrink-0 text-accent sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <span className="truncate">{projectName || '未命名项目'}</span>
+          </h1>
+          <div className="relative z-30 flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <span
+              className="inline-flex h-8 items-center rounded-md border border-hairline bg-muted/40 px-2.5 text-xs font-medium text-ink-muted"
+              title="当前所在界面"
+            >
+              项目配置
+              <span className="ml-1.5 rounded bg-surface/90 px-1.5 py-0.5 text-[10px] font-semibold text-ink">当前</span>
+            </span>
+            <ProjectListNavButton size="toolbar" onClick={() => void handleBack()} />
+            <div
+              className="has-tooltip has-tooltip-user flex cursor-default items-center gap-0 text-ink-muted min-w-0"
+              aria-label={userEmail && userEmail !== '未知用户' ? `当前用户 ${userEmail}，悬停查看详情` : '当前用户，悬停查看详情'}
+            >
+              <svg className="h-5 w-5 shrink-0 rounded-full bg-muted p-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <div className="tooltip-text flex min-w-[12rem] max-w-[min(90vw,18rem)] flex-col items-stretch gap-2">
+                <div className="text-[10px] font-medium uppercase tracking-wider text-ink-muted">当前用户</div>
+                <div className="break-all text-xs leading-snug text-ink">{userEmail || '未登录'}</div>
+              </div>
+            </div>
+            <button type="button" onClick={handleLogout} className="has-tooltip icon-btn icon-btn-red shrink-0" aria-label="退出登录">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              <span className="tooltip-text">退出登录</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-2 sm:gap-x-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          <div className="mr-0 sm:mr-1" role="radiogroup" aria-label="切板优化模式">
+            <div
+              className={`relative flex h-8 min-w-[10.5rem] items-stretch gap-1 rounded-lg border p-0.5 shadow-[inset_0_1px_3px_rgba(0,0,0,0.05)] transition-[background-color,border-color,box-shadow] duration-500 ease-out motion-reduce:duration-200 ${
+                optimization === 1
+                  ? 'border-sky-300/55 bg-gradient-to-r from-sky-100/95 via-sky-50/80 to-sky-100/60'
+                  : 'border-violet-300/55 bg-gradient-to-r from-violet-100/95 via-violet-50/80 to-violet-100/60'
+              }`}
+            >
+              <div
+                className={`pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-4px)] rounded-md bg-white/95 transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.34,1.25,0.64,1)] motion-reduce:transition-none motion-reduce:duration-0 ${
+                  optimization === 1
+                    ? 'shadow-[0_2px_10px_rgba(14,165,233,0.2),0_0_0_1px_rgba(14,165,233,0.22)]'
+                    : 'shadow-[0_2px_10px_rgba(139,92,246,0.18),0_0_0_1px_rgba(139,92,246,0.22)]'
+                }`}
+                style={{
+                  transform:
+                    optimization === 1 ? 'translateX(0)' : 'translateX(calc(100% + 4px))',
+                }}
+                aria-hidden
               />
-              <span>优化模式</span>
-            </label>
-            <label className={`flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 transition-all ${optimization === 0 ? 'bg-surface text-[#9333ea] font-medium shadow-sm border border-hairline' : 'hover:bg-muted text-text-secondary'}`}>
-              <input
-                type="radio"
-                name="optimization"
-                value="0"
-                checked={optimization === 0}
-                onChange={() => setOptimization(0)}
-                className="sr-only"
-              />
-              <span>正常模式</span>
-            </label>
+              <label
+                className={`has-tooltip relative z-10 flex flex-1 cursor-pointer select-none items-center justify-center gap-1 rounded-md px-1.5 text-[11px] font-medium transition-colors duration-300 ${
+                  optimization === 1
+                    ? 'text-sky-700'
+                    : 'text-ink-muted hover:bg-black/[0.04] hover:text-ink'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="optimization"
+                  value="1"
+                  checked={optimization === 1}
+                  onChange={() => setOptimization(1)}
+                  className="sr-only"
+                />
+                <span className="tooltip-text !max-w-[14rem] whitespace-normal !text-left text-[11px] leading-snug">
+                  尽量提高板材利用率，搜索更充分，计算时间往往更长。适合对出材率要求高、可接受等待的订单。
+                </span>
+                <svg className="h-3.5 w-3.5 shrink-0 opacity-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span>优化模式</span>
+              </label>
+              <label
+                className={`has-tooltip relative z-10 flex flex-1 cursor-pointer select-none items-center justify-center gap-1 rounded-md px-1.5 text-[11px] font-medium transition-colors duration-300 ${
+                  optimization === 0
+                    ? 'text-violet-800'
+                    : 'text-ink-muted hover:bg-black/[0.04] hover:text-ink'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="optimization"
+                  value="0"
+                  checked={optimization === 0}
+                  onChange={() => setOptimization(0)}
+                  className="sr-only"
+                />
+                <span className="tooltip-text !max-w-[14rem] whitespace-normal !text-left text-[11px] leading-snug">
+                  按常规规则排版，计算更快，适合日常下单与快速试算。系统默认使用本模式。
+                </span>
+                <svg className="h-3.5 w-3.5 shrink-0 opacity-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+                <span>正常模式</span>
+              </label>
+            </div>
           </div>
           
           <button
             type="button"
-            className="btn-gallery-primary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm"
+            className="btn-gallery-primary inline-flex h-8 items-center gap-1.5 px-3 text-xs shadow-sm"
             onClick={handleCutting}
             disabled={isLoading}
           >
@@ -603,31 +994,32 @@ export default function ProjectDetailPage() {
             )}
             <span>执行切板</span>
           </button>
-          
-          <button 
-            type="button" 
-            className="btn-gallery-green flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm" 
+          <button
+            type="button"
+            className="btn-gallery-green inline-flex h-8 items-center gap-1.5 px-3 text-xs shadow-sm"
             onClick={handleSave}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
             <span>保存更改</span>
           </button>
-          
-          <div className="w-[1px] h-4 bg-border-hairline mx-1"></div>
-          
-          <button 
-            type="button" 
-            className="btn-gallery-secondary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm" 
-            onClick={handleBack}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            <span>返回列表</span>
-          </button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-2.5">
+            <ProjectLayoutNavPills
+              projectId={projectId}
+              active="config"
+              onGoLayout={handleLayoutClick}
+              className="mb-0"
+              size="toolbar"
+              show={{ config: false, projectList: false }}
+              suppressPillCurrentLabel
+            />
+          </div>
         </div>
       </div>
 
       {/* 项目基本信息 */}
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="table-container hover-lift shadow-sm animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
           <div className="table-title flex items-center gap-1.5 text-xs text-ink-muted">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -693,13 +1085,15 @@ export default function ProjectDetailPage() {
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={(e) => {
-                      const value = e.currentTarget.textContent || '0';
-                      if (validatePositiveNumber(value)) {
-                        setSawBlade(parseFloat(value));
-                      } else {
-                        alert('锯片宽度必须为正数（可包含小数）');
-                        e.currentTarget.textContent = sawBlade.toString();
-                      }
+                      void (async () => {
+                        const value = e.currentTarget.textContent || '0';
+                        if (validatePositiveNumber(value)) {
+                          setSawBlade(parseFloat(value));
+                        } else {
+                          await dialogAlert('锯片宽度必须为正数（可包含小数）', '提示');
+                          e.currentTarget.textContent = sawBlade.toString();
+                        }
+                      })();
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -724,7 +1118,10 @@ export default function ProjectDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* 板件信息 */}
         <div className="table-container hover-lift shadow-sm animate-fade-in-up flex flex-col h-full lg:col-span-4" style={{ animationDelay: '0.2s', backgroundColor: '#f8fafc' }}>
-          <div className="table-title flex items-center gap-1.5 text-xs bg-transparent">
+          <div
+            className="table-title flex items-center gap-1.5 text-xs bg-transparent"
+            title="行末「复制为新行」可快速插入相同数据。选中行且焦点不在单元格内时，⌘C / ⌘V 以 JSON 整行复制或覆盖粘贴；在单元格内编辑时 ⌘C / ⌘V 为系统复制粘贴。"
+          >
             <svg className="w-3.5 h-3.5 text-[#0284c7]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
             板件清单
             <span className="badge badge-blue ml-auto">{plates.length}</span>
@@ -734,11 +1131,13 @@ export default function ProjectDetailPage() {
               <thead>
                 <tr>
                   <th className="border p-2 w-10 text-center">#</th>
-                  <th className="border p-2">L</th>
-                  <th className="border p-2">W</th>
-                  <th className="border p-2">数</th>
+                  <th className="border p-2">长</th>
+                  <th className="border p-2">宽</th>
+                  <th className="border p-2">数量</th>
                   <th className="border p-2">说明</th>
-                  <th className="border p-2 w-10 text-center"></th>
+                  <th className="border p-2 w-[4.25rem] text-center text-ink-muted text-[10px] font-medium normal-case tracking-normal">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody onKeyDown={handleKeyDown}>
@@ -794,15 +1193,33 @@ export default function ProjectDetailPage() {
                     >
                       {plate.description}
                     </td>
-                    <td className="border p-2 text-center">
-                      <button
-                        type="button"
-                        onClick={() => deleteRow('plates', index)}
-                        className="has-tooltip icon-btn icon-btn-red !w-5 !h-5"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        <span className="tooltip-text">删除板件</span>
-                      </button>
+                    <td className="border p-1 text-center">
+                      <div className="flex items-center justify-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            duplicateRow('plates', index);
+                          }}
+                          className="has-tooltip icon-btn icon-btn-blue !h-5 !w-5 shrink-0"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-2" />
+                          </svg>
+                          <span className="tooltip-text">复制为新行</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            deleteRow('plates', index);
+                          }}
+                          className="has-tooltip icon-btn icon-btn-red !h-5 !w-5 shrink-0"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          <span className="tooltip-text">删除板件</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -819,7 +1236,10 @@ export default function ProjectDetailPage() {
 
         {/* 零件信息 */}
         <div className="table-container hover-lift shadow-sm animate-fade-in-up flex flex-col h-full lg:col-span-4" style={{ animationDelay: '0.3s', backgroundColor: '#faf5ff' }}>
-          <div className="table-title flex items-center gap-1.5 text-xs bg-transparent">
+          <div
+            className="table-title flex items-center gap-1.5 text-xs bg-transparent"
+            title="行末「复制为新行」可快速插入相同数据。选中行且焦点不在单元格内时，⌘C / ⌘V 以 JSON 整行复制或覆盖粘贴；在单元格内编辑时 ⌘C / ⌘V 为系统复制粘贴。"
+          >
             <svg className="w-3.5 h-3.5 text-[#9333ea]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
             待切零件
             <span className="badge badge-purple ml-auto">{orders.length}</span>
@@ -829,11 +1249,13 @@ export default function ProjectDetailPage() {
               <thead>
                 <tr>
                   <th className="border p-2 w-10 text-center">#</th>
-                  <th className="border p-2">L</th>
-                  <th className="border p-2">W</th>
-                  <th className="border p-2">数</th>
+                  <th className="border p-2">长</th>
+                  <th className="border p-2">宽</th>
+                  <th className="border p-2">数量</th>
                   <th className="border p-2">说明</th>
-                  <th className="border p-2 w-10 text-center"></th>
+                  <th className="border p-2 w-[4.25rem] text-center text-ink-muted text-[10px] font-medium normal-case tracking-normal">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody onKeyDown={handleKeyDown}>
@@ -889,15 +1311,33 @@ export default function ProjectDetailPage() {
                     >
                       {order.description}
                     </td>
-                    <td className="border p-2 text-center">
-                      <button
-                        type="button"
-                        onClick={() => deleteRow('orders', index)}
-                        className="has-tooltip icon-btn icon-btn-red !w-5 !h-5"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        <span className="tooltip-text">删除零件</span>
-                      </button>
+                    <td className="border p-1 text-center">
+                      <div className="flex items-center justify-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            duplicateRow('orders', index);
+                          }}
+                          className="has-tooltip icon-btn icon-btn-blue !h-5 !w-5 shrink-0"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-2" />
+                          </svg>
+                          <span className="tooltip-text">复制为新行</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            deleteRow('orders', index);
+                          }}
+                          className="has-tooltip icon-btn icon-btn-red !h-5 !w-5 shrink-0"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          <span className="tooltip-text">删除零件</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -914,7 +1354,10 @@ export default function ProjectDetailPage() {
 
         {/* 常用尺寸信息 */}
         <div className="table-container hover-lift shadow-sm animate-fade-in-up flex flex-col h-full lg:col-span-4" style={{ animationDelay: '0.4s', backgroundColor: '#fffbeb' }}>
-          <div className="table-title flex items-center gap-1.5 text-xs bg-transparent">
+          <div
+            className="table-title flex items-center gap-1.5 text-xs bg-transparent"
+            title="行末「复制为新行」可快速插入相同数据。选中行且焦点不在单元格内时，⌘C / ⌘V 以 JSON 整行复制或覆盖粘贴；在单元格内编辑时 ⌘C / ⌘V 为系统复制粘贴。"
+          >
             <svg className="w-3.5 h-3.5 text-[#d97706]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
             常用尺寸/余料
             <span className="badge badge-amber ml-auto">{others.length}</span>
@@ -934,11 +1377,13 @@ export default function ProjectDetailPage() {
                             </svg>
                           </div>
                         </th>
-                        <th className="border p-2">L</th>
-                        <th className="border p-2">W</th>
+                        <th className="border p-2">长</th>
+                        <th className="border p-2">宽</th>
                         <th className="border p-2">客户</th>
                         <th className="border p-2">说明</th>
-                        <th className="border p-2 w-10 text-center"></th>
+                        <th className="border p-2 w-[4.25rem] text-center text-ink-muted text-[10px] font-medium normal-case tracking-normal">
+                          操作
+                        </th>
                       </tr>
                     </thead>
                     <tbody {...provided.droppableProps} ref={provided.innerRef} onKeyDown={handleKeyDown}>
@@ -999,15 +1444,33 @@ export default function ProjectDetailPage() {
                               >
                                 {other.description}
                               </td>
-                              <td className="border p-2 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => deleteRow('others', index)}
-                                  className="has-tooltip icon-btn icon-btn-red !w-5 !h-5"
-                                >
-                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                  <span className="tooltip-text">删除尺寸</span>
-                                </button>
+                              <td className="border p-1 text-center">
+                                <div className="flex items-center justify-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={(ev) => {
+                                      ev.stopPropagation();
+                                      duplicateRow('others', index);
+                                    }}
+                                    className="has-tooltip icon-btn icon-btn-blue !h-5 !w-5 shrink-0"
+                                  >
+                                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-2" />
+                                    </svg>
+                                    <span className="tooltip-text">复制为新行</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(ev) => {
+                                      ev.stopPropagation();
+                                      deleteRow('others', index);
+                                    }}
+                                    className="has-tooltip icon-btn icon-btn-red !h-5 !w-5 shrink-0"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    <span className="tooltip-text">删除尺寸</span>
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           )}

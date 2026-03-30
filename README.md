@@ -84,10 +84,24 @@ python run.py
 后端服务将在 http://localhost:8000 启动
 
 ### 4. 环境配置
-创建 `.env.local` 文件并配置 Supabase 连接信息：
+
+前后端各自使用独立的 `.env.local`（路径不同，变量名也不同）。
+
+**后端**（`backend/.env.local`）：
+
 ```env
+HOST=127.0.0.1
+PORT=8000
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_key
+```
+
+**前端**（`frontend/.env.local`）：
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
 ## 📖 使用指南
@@ -120,6 +134,27 @@ SUPABASE_KEY=your_supabase_key
 - **API 接口**：完整的 RESTful API 服务
 - **数据管理**：项目数据的增删改查
 - **实时同步**：与 Supabase 数据库的实时同步
+
+## 🧮 排版切割算法与流程
+
+后端的排版切割引擎是本系统的核心，基于 Python 和 `rectpack` 库进行深度定制与增强，主要包含以下优化流程与算法原理：
+
+### 1. 数据预处理与参数计算
+- **考虑锯片物理损耗**：解析前端传入的板材、零件（订单）及余料库存数据。根据用户设定的**锯片厚度 (Saw Blade)**，在测算阶段为每块待排放的零件自动加上锯片缝隙余量，以符合真实的物理切割占位尺寸。
+- **智能寻优排序**：系统通过评估不同规格零件的“组合潜力”与“适配难度”，自动测算**互补尺寸**组合（如发现哪些不同尺寸的零件可结合完美打满行与列）。随后通过轮询 (Round Robin)、贪心 (Greedy) 和平衡 (Balanced) 等策略验证评出最佳的放置序列队列。
+
+### 2. 核心排版引擎 (PlateOptimizer)
+- **多向评估与自适应摆放**：不仅依托了基础布局算法体系，更增加自动感知是否应**旋转 (Rotation)** 的功能。对零件落脚点周围空间作双向适应性探测，取能获取较大空间留存的方向。
+- **行式定制布局法**：对于前置过滤出的互补组合直接激活特定的“行向式排布 (Row-Based)”，强制这些板件对齐拼列，大幅提升原板整体利用率并使最终走刀线更为规整简洁。
+
+### 3. 边角余料极小化填充 (StockOptimizer)
+针对在完成常规订单零件排版后剩余的大量缝隙与边角区域，算法进一步执行库存填缝逻辑优化，引入两种定制的填空引擎：
+- 基于 **MaxRects BAF (Best Area Fit)** 策略：维护并动态裁切大板上的矩形空隙最大边界，落刀选择带来最小总废除空间（最严丝合缝）的落脚点。
+- 基于 **Guillotine BSSF + LLAS** 策略：即一刀切特制版策略。系统采纳最优短边适应法，结合长轴剩余极长分裂法则（Long Leftover Axis Split）——确保排完以后剩下的是长长的一根整条而非几个方块碎片，既便于后期余料建库利用也方便锯片一刀通切。并提供长宽周长面积的交叉排列顺序检测来获取极致填充率。
+
+### 4. 数据后处理与指标统计
+- **尺寸回缩归真**：方案落实后，所有的排版坐标将剥除最初加入的“锯片厚度缓冲值”，提取为纯木板长宽 `(width, height)` 及纯净标定起点 `(x1, y1)` 还原发回前端交互渲染。
+- **精算指标下发**：汇总利用总耗原大板片数、超高精度利用率 (Utilization rate%) 以及最终未落地失败（如果板不够放）的订单名单，全景交付出高质量下料单。
 
 ## 📊 数据模型
 
@@ -197,14 +232,17 @@ Content-Type: application/json
 3. **数据库连接错误**：验证 Supabase 配置信息
 4. **优化算法异常**：检查输入数据的有效性
 
-### 调试模式
-```bash
-# 前端调试
-npm run dev
+### 调试与日志
 
-# 后端调试
-python run.py --debug
+```bash
+# 前端开发（热更新）
+cd frontend && npm run dev
+
+# 后端开发：`run.py` 使用 `config.py` 中的设置；热重载由环境变量 `RELOAD` 控制（默认 true）
+cd backend && python run.py
 ```
+
+如需更详细的 uvicorn 日志，可在 `backend/.env.local` 中设置 `LOG_LEVEL=debug`（参见 `backend/config.py`）。
 
 ## 📝 开发说明
 

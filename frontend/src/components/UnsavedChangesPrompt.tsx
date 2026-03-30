@@ -4,10 +4,13 @@ import { useEffect } from 'react';
 
 interface UnsavedChangesPromptProps {
   hasChanges: boolean;
-  onSave: () => Promise<void>;
 }
 
-export default function UnsavedChangesPrompt({ hasChanges, onSave }: UnsavedChangesPromptProps) {
+/**
+ * 关闭/刷新标签页时的浏览器级提示。不在 document 上捕获链接点击，避免与 Next.js 路由、复杂 DOM 冲突。
+ * 应用内离开请使用各页的按钮逻辑（如 handleBack）配合 useAppDialog。
+ */
+export default function UnsavedChangesPrompt({ hasChanges }: UnsavedChangesPromptProps) {
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasChanges) {
@@ -16,31 +19,9 @@ export default function UnsavedChangesPrompt({ hasChanges, onSave }: UnsavedChan
       }
     };
 
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const link = target.closest('a');
-      if (link && !link.getAttribute('href')?.startsWith('/project/')) {
-        if (hasChanges) {
-          e.preventDefault();
-          if (window.confirm('有未保存的更改，是否保存？')) {
-            onSave().then(() => {
-              window.location.href = link.href;
-            });
-          } else {
-            window.location.href = link.href;
-          }
-        }
-      }
-    };
-
     window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('click', handleClick);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('click', handleClick);
-    };
-  }, [hasChanges, onSave]);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasChanges]);
 
   return null;
-} 
+}

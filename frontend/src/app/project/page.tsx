@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { useRouter } from 'next/navigation';
+import { IconNavConfig, IconNavHomeLayout, IconNavOverview } from '@/components/ProjectLayoutNavPills';
+import { useAppDialog } from '@/components/AppDialog';
 
 interface Project {
   id: number
@@ -24,7 +26,30 @@ interface Item {
   customer?: string | null
 }
 
+/** cutted 最后一项为元数据，前面为各页排版方案 */
+function cuttingPlanPages(cutted: unknown): unknown[] {
+  if (!Array.isArray(cutted) || cutted.length === 0) return [];
+  return cutted.slice(0, -1);
+}
+
+/** Supabase PostgrestError 等通常不是 Error 实例，直接 instanceof 会得到「未知错误」 */
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null) {
+    const o = err as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    if (typeof o.message === 'string' && o.message.length > 0) return o.message;
+    const parts = [o.details, o.hint, o.code].filter((x) => typeof x === 'string' && (x as string).length > 0) as string[];
+    if (parts.length > 0) return parts.join(' · ');
+  }
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 export default function ProjectPage() {
+  const { alert: dialogAlert, confirm: dialogConfirm } = useAppDialog();
   const [projects, setProjects] = useState<Project[]>([])
   // 使用 expandedProjects 管理哪些行展开
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set())
@@ -93,14 +118,14 @@ export default function ProjectPage() {
   const handleDeleteProject = async (projectId: number, e: React.MouseEvent) => {
     e.stopPropagation(); // 阻止展开折叠
     
-    if (!confirm('确定要删除此项目吗？')) return;
+    if (!(await dialogConfirm('确定要删除此项目吗？', '删除确认'))) return;
 
     setIsDeleting(projectId);
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        alert('请先登录');
+        await dialogAlert('请先登录', '提示');
         return;
       }
 
@@ -132,7 +157,7 @@ export default function ProjectPage() {
       
       await fetchProjects();
     } catch (error) {
-      alert(error instanceof Error ? error.message : '删除失败');
+      await dialogAlert(errorMessage(error), '删除失败');
     } finally {
       setIsDeleting(null);
     }
@@ -140,12 +165,12 @@ export default function ProjectPage() {
 
   const handleBatchDelete = async () => {
     if (selectedProjects.size === 0) return;
-    if (!confirm(`确定要删除选中的 ${selectedProjects.size} 个项目吗？`)) return;
+    if (!(await dialogConfirm(`确定要删除选中的 ${selectedProjects.size} 个项目吗？`, '批量删除'))) return;
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        alert('请先登录');
+        await dialogAlert('请先登录', '提示');
         return;
       }
 
@@ -180,7 +205,7 @@ export default function ProjectPage() {
       setSelectedProjects(new Set());
       await fetchProjects();
     } catch (error) {
-      alert(error instanceof Error ? error.message : '批量删除失败');
+      await dialogAlert(errorMessage(error), '批量删除失败');
     }
   };
 
@@ -229,25 +254,41 @@ export default function ProjectPage() {
     return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
   };
 
+  const sectionToneClass = (tone: 'plate' | 'part' | 'stock') => {
+    if (tone === 'plate') return '!bg-sky-50 border-l-[3px] !border-l-sky-500'
+    if (tone === 'part') return '!bg-violet-50 border-l-[3px] !border-l-violet-500'
+    return '!bg-amber-50 border-l-[3px] !border-l-amber-500'
+  }
+
+  const sectionTitleBarClass = (tone: 'plate' | 'part' | 'stock') => {
+    if (tone === 'plate') return 'bg-sky-100/70'
+    if (tone === 'part') return 'bg-violet-100/70'
+    return 'bg-amber-100/70'
+  }
+
   const renderTable = (
     items: Item[],
     title: string,
     showQuantity: boolean = true,
     showCustomer: boolean = false,
-    colorClass: string = "text-ink"
+    colorClass: string = "text-ink",
+    sectionTone?: 'plate' | 'part' | 'stock'
   ) => {
+    const tone = sectionTone ? sectionToneClass(sectionTone) : ''
+    const titleBar = sectionTone ? sectionTitleBarClass(sectionTone) : ''
+
     if (!items || items.length === 0) {
       return (
-        <div className="table-container shadow-sm">
-          <div className={`table-title ${colorClass} flex items-center gap-2`}>{title}</div>
-          <div className="p-4 text-center text-xs text-ink-muted bg-surface">暂无数据</div>
+        <div className={`table-container shadow-sm ${tone}`}>
+          <div className={`table-title ${colorClass} flex items-center gap-2 ${titleBar}`}>{title}</div>
+          <div className={`p-4 text-center text-xs text-ink-muted ${sectionTone === 'plate' ? 'bg-sky-50/50' : sectionTone === 'part' ? 'bg-violet-50/50' : sectionTone === 'stock' ? 'bg-amber-50/50' : 'bg-surface'}`}>暂无数据</div>
         </div>
       );
     }
 
     return (
-      <div className="table-container shadow-sm">
-        <div className={`table-title ${colorClass} flex items-center gap-2`}>
+      <div className={`table-container shadow-sm ${tone}`}>
+        <div className={`table-title ${colorClass} flex items-center gap-2 ${titleBar}`}>
           {title}
         </div>
         <div className="table-content">
@@ -256,7 +297,7 @@ export default function ProjectPage() {
               <tr>
                 <th className="border p-2 w-12 text-center">#</th>
                 <th className="border p-2">长 × 宽</th>
-                {showQuantity && <th className="border p-2 w-16 text-center">数</th>}
+                {showQuantity && <th className="border p-2 w-16 text-center">数量</th>}
                 {showCustomer && <th className="border p-2 truncate max-w-[80px]">客户</th>}
                 <th className="border p-2 truncate max-w-[100px]">描述</th>
               </tr>
@@ -283,9 +324,29 @@ export default function ProjectPage() {
     router.push(`/project/${projectId}`);
   };
 
-  const handleLayout = (projectId: number, e: React.MouseEvent) => {
+  const handleHomeLayout = async (projectId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const { data } = await supabase.from('Projects').select('cutted').eq('id', projectId).single();
+    if (cuttingPlanPages(data?.cutted).length > 0) {
+      router.push(`/layout/${projectId}/1`);
+    } else {
+      await dialogAlert('暂无切板方案，请先在项目中执行切板', '提示');
+    }
+  };
+
+  const handleSchemeOverview = (projectId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     router.push(`/layout/${projectId}`);
+  };
+
+  const handleProjectNameNavigate = async (projectId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const { data } = await supabase.from('Projects').select('cutted').eq('id', projectId).single();
+    if (cuttingPlanPages(data?.cutted).length > 0) {
+      router.push(`/layout/${projectId}/1`);
+    } else {
+      router.push(`/project/${projectId}`);
+    }
   };
 
   const handleLogout = async () => {
@@ -293,7 +354,7 @@ export default function ProjectPage() {
     if (!error) {
       router.push('/login');
     } else {
-      alert('退出登录失败: ' + error.message);
+      await dialogAlert('退出登录失败: ' + error.message, '退出失败');
     }
   };
 
@@ -304,7 +365,7 @@ export default function ProjectPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        alert('请先登录');
+        await dialogAlert('请先登录', '提示');
         setIsCreating(false);
         return;
       }
@@ -319,36 +380,61 @@ export default function ProjectPage() {
         newName = `new_${i}`;
       }
 
-      const defaultPlates = [{ id: 1, width: 1220, length: 2440, quantity: 100, description: "default" }];
+      const defaultPlates = [{ id: 1, width: 1220, length: 2440, quantity: 100, description: 'default' }];
+      const now = new Date().toISOString();
 
       const { data: newProject, error: projectError } = await supabase
         .from('Projects')
-        .insert([{ name: newName, uid: user.id, plates: defaultPlates, orders: [], others: [] }])
+        .insert([
+          {
+            name: newName,
+            uid: user.id,
+            details: '',
+            description: '',
+            saw_blade: 4,
+            plates: defaultPlates,
+            orders: [],
+            others: [],
+            updated_at: now,
+          },
+        ])
         .select()
         .single();
 
       if (projectError) throw projectError;
+      if (!newProject?.id) {
+        throw new Error('已插入但未返回项目 id，请检查 Projects 表的 select 策略与 RLS');
+      }
 
       const { data: bridgeData, error: bridgeError } = await supabase
         .from('Bridges')
-        .select('*')
+        .select('uid, project_ids')
         .eq('uid', user.id)
-        .single();
+        .maybeSingle();
+
+      if (bridgeError) throw bridgeError;
 
       const existingProjectIds = bridgeData?.project_ids || [];
       const newProjectIds = [...existingProjectIds, newProject.id];
-      const now = new Date().toISOString();
 
-      if (bridgeError?.code === 'PGRST116') {
-        await supabase.from('Bridges').insert({ uid: user.id, project_ids: newProjectIds, updated_at: now });
-      } else if (!bridgeError) {
-        await supabase.from('Bridges').update({ project_ids: newProjectIds, updated_at: now }).eq('uid', user.id);
+      if (!bridgeData) {
+        const { error: insertBridgeError } = await supabase
+          .from('Bridges')
+          .insert({ uid: user.id, project_ids: newProjectIds, updated_at: now });
+        if (insertBridgeError) throw insertBridgeError;
+      } else {
+        const { error: updateBridgeError } = await supabase
+          .from('Bridges')
+          .update({ project_ids: newProjectIds, updated_at: now })
+          .eq('uid', user.id);
+        if (updateBridgeError) throw updateBridgeError;
       }
 
       await fetchProjects();
       router.push(`/project/${newProject.id}`);
     } catch (error) {
-      alert('创建项目失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      console.error('创建项目失败', error);
+      await dialogAlert('创建项目失败: ' + errorMessage(error), '创建失败');
     } finally {
       setIsCreating(false);
     }
@@ -358,7 +444,7 @@ export default function ProjectPage() {
     <div className="page-gallery">
       <div className="page-gallery-inner">
       {/* 顶部导航区 */}
-      <div className="mb-8 border-b border-hairline pb-4 flex items-center justify-between animate-fade-in-up">
+      <div className="relative z-30 mb-8 flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-hairline pb-4 animate-fade-in-up">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
             <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -370,10 +456,10 @@ export default function ProjectPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 sm:gap-4">
           <button 
             type="button"
-            className="btn-gallery-primary flex items-center gap-1.5 shadow-sm px-4 py-2 text-sm"
+            className="btn-gallery-primary inline-flex h-8 items-center gap-1.5 px-3 text-xs shadow-sm"
             onClick={handleNew}
             disabled={isCreating}
           >
@@ -390,15 +476,18 @@ export default function ProjectPage() {
             新建项目
           </button>
 
-          <div className="h-4 w-[1px] bg-border-hairline"></div>
-          
-          <div className="has-tooltip flex items-center gap-2 text-ink-muted cursor-default">
-            <svg className="w-5 h-5 bg-muted rounded-full p-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="h-4 w-px shrink-0 bg-border-hairline" aria-hidden />
+
+          <div
+            className="has-tooltip has-tooltip-user flex cursor-default items-center gap-0 text-ink-muted min-w-0"
+            aria-label={userEmail ? `当前用户 ${userEmail}，悬停查看详情` : '当前用户，悬停查看详情'}
+          >
+            <svg className="h-5 w-5 shrink-0 rounded-full bg-muted p-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
-            <div className="tooltip-text flex flex-col items-center gap-1">
-              <span>{userEmail || '未登录'}</span>
-              <span className="text-xs text-white/70">共 {projects.length} 个项目</span>
+            <div className="tooltip-text flex min-w-[12rem] max-w-[min(90vw,18rem)] flex-col items-stretch gap-2">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-ink-muted">当前用户</div>
+              <div className="break-all text-xs leading-snug text-ink">{userEmail || '未登录'}</div>
             </div>
           </div>
 
@@ -409,12 +498,15 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* 工具栏 */}
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in-up" style={{ animationDelay: '0.05s' }}>
-        <div className="flex flex-wrap items-center gap-3 w-full sm:flex-1">
+      {/* 工具栏：左筛选 / 右统计+排序，避免挤在一侧 */}
+      <div
+        className="relative z-10 mb-4 flex w-full min-w-0 flex-col gap-3 animate-fade-in-up sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+        style={{ animationDelay: '0.05s' }}
+      >
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <button 
             type="button"
-            className="btn-gallery-ghost !p-1 !h-8 w-8 flex items-center justify-center border-hairline shrink-0"
+            className="btn-gallery-ghost !p-1 !h-8 w-8 flex shrink-0 items-center justify-center border-hairline"
             onClick={toggleSelectAll}
             title={selectedProjects.size === filteredAndSortedProjects.length && filteredAndSortedProjects.length > 0 ? "取消全选" : "全选"}
           >
@@ -422,18 +514,18 @@ export default function ProjectPage() {
               type="checkbox" 
               checked={selectedProjects.size === filteredAndSortedProjects.length && filteredAndSortedProjects.length > 0} 
               readOnly 
-              className="w-4 h-4 cursor-pointer accent-[#0284c7]"
+              className="h-4 w-4 cursor-pointer accent-[#0284c7]"
             />
           </button>
 
-          <div className="relative shrink-0 flex-1 sm:flex-none">
-            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <div className="relative min-w-0 flex-1 sm:max-w-xs sm:flex-none">
+            <svg className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
             <input 
               type="text" 
-              placeholder="搜索项目" 
+              placeholder="搜索项目…" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="field-gallery !pl-9 !pr-4 !py-1.5 w-full sm:w-64 lg:w-72 text-xs placeholder:text-[12px] placeholder:text-ink-muted/70 text-left transition-all focus:ring-1 focus:ring-accent focus:border-accent"
+              className="field-gallery h-8 w-full !py-0 !pl-8 !pr-3 text-xs leading-8 placeholder:text-[12px] placeholder:text-ink-muted/70 focus:border-accent focus:ring-1 focus:ring-accent"
             />
           </div>
 
@@ -441,20 +533,26 @@ export default function ProjectPage() {
             <button 
               type="button"
               onClick={handleBatchDelete}
-              className="btn-gallery-danger flex items-center gap-1.5 text-xs py-1.5 px-3 border border-[#fecaca] bg-[#fef2f2] hover:bg-[#fee2e2] text-[#dc2626] rounded-md transition-colors whitespace-nowrap shrink-0"
+              className="btn-gallery-danger flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-[#fecaca] bg-[#fef2f2] px-2.5 text-xs text-[#dc2626] transition-colors hover:bg-[#fee2e2]"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
               批量删除 ({selectedProjects.size})
             </button>
           )}
         </div>
-        
-        <div className="flex items-center gap-3 shrink-0 self-start sm:self-auto sm:ml-0">
-          <span className="text-xs text-ink-muted shrink-0 whitespace-nowrap hidden sm:inline-block mr-2">共 {filteredAndSortedProjects.length} 项</span>
+
+        <div className="flex shrink-0 items-center gap-2 border-t border-hairline pt-3 sm:border-t-0 sm:pt-0">
+          <span
+            className="badge badge-accent inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums"
+            title={searchQuery.trim() ? `列表显示 ${filteredAndSortedProjects.length} 项，账号共 ${projects.length} 个项目` : '账号下项目总数'}
+          >
+            共 {projects.length} 个
+          </span>
           <select 
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="field-gallery !py-1.5 w-32 text-xs text-ink-muted shrink-0 cursor-pointer hover:border-[#c5c5c7] transition-colors"
+            aria-label="排序方式"
+            className="field-gallery h-8 min-w-[9.5rem] cursor-pointer !py-0 pl-2.5 pr-8 text-xs leading-8 text-ink hover:border-[#c5c5c7]"
           >
             <option value="dateDesc">最新修改</option>
             <option value="dateAsc">最早修改</option>
@@ -497,7 +595,14 @@ export default function ProjectPage() {
                       />
                     </div>
                     <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <h2 className="truncate text-sm font-medium text-ink max-w-[200px]">{project.name}</h2>
+                      <button
+                        type="button"
+                        className="max-w-[200px] cursor-pointer truncate border-0 bg-transparent p-0 text-left text-sm font-medium text-accent hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-1 rounded-sm"
+                        title="有切板数据时进入首页排版，否则进入项目配置"
+                        onClick={(e) => void handleProjectNameNavigate(project.id, e)}
+                      >
+                        {project.name}
+                      </button>
                       {project.details && <span className="badge badge-gray truncate">{project.details}</span>}
                       {project.description && (
                         <span className="truncate text-xs text-ink-muted max-w-[300px]">
@@ -514,24 +619,36 @@ export default function ProjectPage() {
                       <span className="tooltip-text">{new Date(project.updated_at).toLocaleString('zh-CN')}</span>
                     </div>
 
-                    <div className="flex items-center gap-1.5 opacity-80 transition-opacity group-hover:opacity-100">
+                    <div className="flex items-center gap-1 opacity-80 transition-opacity group-hover:opacity-100">
                       <button 
                         type="button"
                         onClick={(e) => handleEdit(project.id, e)}
                         className="has-tooltip icon-btn icon-btn-blue"
+                        aria-label="项目配置"
                       >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                        <span className="tooltip-text">编辑项目</span>
+                        <IconNavConfig className="h-4 w-4" />
+                        <span className="tooltip-text">项目配置</span>
                       </button>
-                    
-                    <button 
-                      type="button"
-                      onClick={(e) => handleLayout(project.id, e)}
-                      className="has-tooltip icon-btn icon-btn-green"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-                      <span className="tooltip-text">切板统计</span>
-                    </button>
+
+                      <button 
+                        type="button"
+                        onClick={(e) => void handleHomeLayout(project.id, e)}
+                        className="has-tooltip icon-btn icon-btn-teal"
+                        aria-label="首页排版"
+                      >
+                        <IconNavHomeLayout className="h-4 w-4" />
+                        <span className="tooltip-text">首页排版</span>
+                      </button>
+
+                      <button 
+                        type="button"
+                        onClick={(e) => handleSchemeOverview(project.id, e)}
+                        className="has-tooltip icon-btn icon-btn-violet"
+                        aria-label="方案总览"
+                      >
+                        <IconNavOverview className="h-4 w-4" />
+                        <span className="tooltip-text">方案总览</span>
+                      </button>
 
                     <button 
                       type="button"
@@ -566,9 +683,9 @@ export default function ProjectPage() {
                 {isExpanded && (
                   <div className="animate-fade-in-up border-t border-hairline bg-muted/30 p-4" style={{ animationDuration: '0.2s' }}>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      {renderTable(pParts, '板件信息', true, false, 'text-[#0284c7]')}
-                      {renderTable(pOrders, '零件信息', true, false, 'text-[#9333ea]')}
-                      {renderTable(pOthers, '常用尺寸', false, true, 'text-[#d97706]')}
+                      {renderTable(pParts, '板件信息', true, false, 'text-[#0284c7]', 'plate')}
+                      {renderTable(pOrders, '零件信息', true, false, 'text-[#9333ea]', 'part')}
+                      {renderTable(pOthers, '常用尺寸', false, true, 'text-[#d97706]', 'stock')}
                     </div>
                   </div>
                 )}

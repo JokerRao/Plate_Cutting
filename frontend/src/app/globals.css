@@ -126,6 +126,16 @@ button {
   color: #16a34a;
 }
 
+.icon-btn-teal:hover {
+  background-color: #f0fdfa;
+  color: #0d9488;
+}
+
+.icon-btn-violet:hover {
+  background-color: #faf5ff;
+  color: #9333ea;
+}
+
 /* 红调图标按钮 */
 .icon-btn-red:hover {
   background-color: #fef2f2;
@@ -147,6 +157,13 @@ button {
 .badge-amber { background-color: #fffbeb; color: #d97706; }
 .badge-green { background-color: #f0fdf4; color: #16a34a; }
 .badge-gray { background-color: #f3f4f6; color: #4b5563; }
+.badge-accent {
+  background-color: rgba(0, 122, 255, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(0, 122, 255, 0.22);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 
 /* 悬浮气泡 Tooltip */
 .has-tooltip {
@@ -156,24 +173,59 @@ button {
   visibility: hidden;
   opacity: 0;
   width: max-content;
-  background-color: #1d1e20;
-  color: #fff;
+  max-width: min(90vw, 16rem);
+  background-color: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border-hairline);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.03);
   text-align: center;
-  border-radius: 4px;
-  padding: 4px 8px;
+  border-radius: 6px;
+  padding: 6px 10px;
   position: absolute;
   z-index: 10;
   bottom: 125%;
   left: 50%;
   transform: translateX(-50%) translateY(4px);
   font-size: 11px;
-  transition: all 0.2s ease;
+  font-weight: 500;
+  line-height: 1.35;
+  transition:
+    opacity 0.2s ease,
+    visibility 0.2s ease,
+    transform 0.2s ease;
   pointer-events: none;
 }
 .has-tooltip:hover .tooltip-text {
   visibility: visible;
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* 顶栏用户：浅色卡片、在触发器下方浮现（不向上黑底弹出） */
+.has-tooltip-user {
+  z-index: 40;
+}
+.has-tooltip-user .tooltip-text {
+  z-index: 50;
+  background-color: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border-hairline);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.07),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+  text-align: left;
+  bottom: auto;
+  top: calc(100% + 10px);
+  left: auto;
+  right: 0;
+  transform: translateX(0) translateY(-4px);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.has-tooltip-user:hover .tooltip-text {
+  transform: translateX(0) translateY(0);
 }
 
 /* 表格：发丝线分割、极简高度 */
@@ -245,6 +297,15 @@ table tbody tr:hover {
 .btn-gallery-primary, .btn-gallery-green, .btn-gallery-secondary, .btn-gallery-secondary-active, .btn-gallery-ghost, .btn-gallery-danger {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   font-size: 12px; /* 字体更小 */
+}
+
+/* 主工具条实心按钮统一高度；ghost/danger 由页面自行控制（如表格「添加新行」、批量删除） */
+.btn-gallery-primary,
+.btn-gallery-green,
+.btn-gallery-secondary,
+.btn-gallery-secondary-active {
+  box-sizing: border-box;
+  min-height: 32px;
 }
 
 .btn-gallery-primary {
@@ -363,7 +424,10 @@ table tbody tr:hover {
 }
 
 .page-gallery-inner {
+  box-sizing: border-box;
+  width: 100%;
   max-width: 80rem; /* 稍微缩窄内容区让视觉更集中 */
+  min-width: 0;
   margin-left: auto;
   margin-right: auto;
   padding: 2.5rem 1.5rem 4rem;
@@ -373,6 +437,18 @@ table tbody tr:hover {
   .page-gallery-inner {
     padding-left: 2.5rem;
     padding-right: 2.5rem;
+  }
+}
+
+/** 排版单页：减小四边留白、放宽宽度，便于排版图占满视区 */
+.page-gallery-inner--layout-detail {
+  max-width: min(100%, 96rem);
+  padding: 1rem 0.75rem 2rem;
+}
+
+@media (min-width: 768px) {
+  .page-gallery-inner--layout-detail {
+    padding: 1.25rem 1rem 2.5rem;
   }
 }
 
