@@ -427,21 +427,21 @@ export default function ProjectPage() {
           </button>
 
           <div className="relative shrink-0 flex-1 sm:flex-none">
+            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
             <input 
               type="text" 
               placeholder="搜索项目" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="field-gallery pr-8 pl-4 !py-1.5 w-full sm:w-64 text-xs placeholder:text-[11px] text-right"
+              className="field-gallery !pl-9 !pr-4 !py-1.5 w-full sm:w-72 text-xs placeholder:text-[12px] placeholder:text-ink-muted/70 text-left transition-all focus:ring-1 focus:ring-accent focus:border-accent"
             />
-            <svg className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
 
           {selectedProjects.size > 0 && (
             <button 
               type="button"
               onClick={handleBatchDelete}
-              className="btn-gallery-danger flex items-center gap-1 text-xs py-1.5 px-3 border border-[#fecaca] bg-[#fef2f2] hover:bg-[#fee2e2] text-[#dc2626] rounded-md transition-colors whitespace-nowrap shrink-0"
+              className="btn-gallery-danger flex items-center gap-1.5 text-xs py-1.5 px-3 border border-[#fecaca] bg-[#fef2f2] hover:bg-[#fee2e2] text-[#dc2626] rounded-md transition-colors whitespace-nowrap shrink-0"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
               批量删除 ({selectedProjects.size})
@@ -454,7 +454,7 @@ export default function ProjectPage() {
           <select 
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="field-gallery !py-1.5 w-32 text-xs text-ink-muted shrink-0"
+            className="field-gallery !py-1.5 w-36 text-xs text-ink-muted shrink-0 cursor-pointer hover:border-[#c5c5c7] transition-colors"
           >
             <option value="dateDesc">最新修改</option>
             <option value="dateAsc">最早修改</option>
