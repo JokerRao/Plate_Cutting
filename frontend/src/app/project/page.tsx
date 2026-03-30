@@ -411,7 +411,7 @@ export default function ProjectPage() {
 
       {/* 工具栏 */}
       <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in-up" style={{ animationDelay: '0.05s' }}>
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:flex-1">
           <button 
             type="button"
             className="btn-gallery-ghost !p-1 !h-8 w-8 flex items-center justify-center border-hairline shrink-0"
@@ -433,7 +433,7 @@ export default function ProjectPage() {
               placeholder="搜索项目" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="field-gallery !pl-9 !pr-4 !py-1.5 w-full sm:w-72 text-xs placeholder:text-[12px] placeholder:text-ink-muted/70 text-left transition-all focus:ring-1 focus:ring-accent focus:border-accent"
+              className="field-gallery !pl-9 !pr-4 !py-1.5 w-full sm:w-64 lg:w-72 text-xs placeholder:text-[12px] placeholder:text-ink-muted/70 text-left transition-all focus:ring-1 focus:ring-accent focus:border-accent"
             />
           </div>
 
@@ -449,12 +449,12 @@ export default function ProjectPage() {
           )}
         </div>
         
-        <div className="flex items-center gap-3 shrink-0 self-start sm:self-auto ml-auto sm:ml-0">
+        <div className="flex items-center gap-3 shrink-0 self-start sm:self-auto sm:ml-0">
           <span className="text-xs text-ink-muted shrink-0 whitespace-nowrap hidden sm:inline-block mr-2">共 {filteredAndSortedProjects.length} 项</span>
           <select 
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="field-gallery !py-1.5 w-36 text-xs text-ink-muted shrink-0 cursor-pointer hover:border-[#c5c5c7] transition-colors"
+            className="field-gallery !py-1.5 w-32 text-xs text-ink-muted shrink-0 cursor-pointer hover:border-[#c5c5c7] transition-colors"
           >
             <option value="dateDesc">最新修改</option>
             <option value="dateAsc">最早修改</option>

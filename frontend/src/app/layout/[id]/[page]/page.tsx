@@ -295,8 +295,8 @@ export default function LayoutPage() {
     if (filteredData.length === 0) return null;
 
     return (
-      <div className="table-container hover-lift shadow-sm animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-        <div className="table-title flex items-center gap-2">
+      <div className={`table-container hover-lift shadow-sm animate-fade-in-up h-full flex flex-col ${type === 'orders' ? 'bg-[#faf5ff]' : 'bg-[#fffbeb]'}`} style={{ animationDelay: '0.2s' }}>
+        <div className="table-title flex items-center gap-2 bg-transparent">
           {type === 'orders' ? (
             <svg className="w-4 h-4 text-[#9333ea]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
           ) : (
@@ -304,7 +304,7 @@ export default function LayoutPage() {
           )}
           {title}
         </div>
-        <div className="table-content">
+        <div className="table-content flex-1 overflow-auto max-h-[400px]">
           <table className="w-full">
             <thead>
               <tr>
