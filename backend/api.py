@@ -1,5 +1,7 @@
 import asyncio
+import functools
 import logging
+from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
 from config import Settings, get_settings
@@ -8,8 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import RedirectResponse
-from main import optimize_cutting
 from pydantic import BaseModel, Field
+from services.cutting_service import optimize_cutting
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -32,7 +34,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 def setup_logging(settings: Settings):
     logging.basicConfig(
-        level=getattr(logging, settings.LOG_LEVEL),
+        level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
         format=settings.LOG_FORMAT
     )
     return logging.getLogger('plate_cutting_api')
@@ -150,6 +152,9 @@ class CuttingResponse(BaseModel):
 # Semaphore for limiting concurrent optimizations
 optimization_semaphore = asyncio.Semaphore(settings.LIMIT_CONCURRENCY)
 
+# Process pool for CPU-bound cutting calculations (avoids blocking the event loop)
+_process_pool = ProcessPoolExecutor(max_workers=4)
+
 
 def validate_dimensions(plates: List[dict],
                         orders: List[dict]) -> tuple[bool,
@@ -244,14 +249,21 @@ async def optimize_plates(
             "stock_pieces_available": len(others_dict) if others_dict else 0
         }
 
-        # Call optimization function
-        cutting_plans = optimize_cutting(
-            plates=plates_dict,
-            orders=orders_dict,
-            others=others_dict,
-            optim=int(cutting_request.optimization),
-            saw_blade=saw_blade
-        )
+        # Run CPU-intensive optimization in a process pool to avoid
+        # blocking the FastAPI event loop for concurrent requests.
+        loop = asyncio.get_event_loop()
+        async with optimization_semaphore:
+            cutting_plans = await loop.run_in_executor(
+                _process_pool,
+                functools.partial(
+                    optimize_cutting,
+                    plates=plates_dict,
+                    orders=orders_dict,
+                    others=others_dict,
+                    optim=int(cutting_request.optimization),
+                    saw_blade=saw_blade,
+                ),
+            )
 
         if not cutting_plans:
             return CuttingResponse(

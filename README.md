@@ -23,12 +23,19 @@ Plate_Cutting/
 │   ├── public/              # 静态资源
 │   └── package.json         # 前端依赖
 ├── backend/                  # 后端项目
-│   ├── api.py              # FastAPI 接口
-│   ├── main.py             # 核心优化算法
-│   ├── config.py           # 配置管理
-│   ├── run.py              # 服务启动
-│   ├── tests/              # API 测试 (pytest)
-│   └── requirements.txt    # Python 依赖
+│   ├── api.py               # FastAPI 路由与中间件入口
+│   ├── config.py            # 配置管理 (Pydantic Settings)
+│   ├── run.py               # Uvicorn 服务启动
+│   ├── core/                # 基础模块层
+│   │   ├── models.py        # 数据类：CuttingConfig, SmallPlate, Cut, Rectangle
+│   │   └── utils.py         # 工具函数：DataConverter, 指标计算, 算法比较
+│   ├── engine/              # 算法引擎层
+│   │   ├── packers.py       # 装箱算法：MaxRects BAF, Guillotine BSSF+LLAS
+│   │   └── optimizers.py    # 优化调度：PlateOptimizer, StockOptimizer
+│   ├── services/            # 业务服务层
+│   │   └── cutting_service.py  # 核心入口：optimize_cutting, run_single_algorithm
+│   ├── tests/               # API 测试 (pytest)
+│   └── requirements.txt     # Python 依赖
 └── README.md               # 项目说明
 ```
 

@@ -1,3 +1,0 @@
-"""
-Plate Cutting API Package
-""" 

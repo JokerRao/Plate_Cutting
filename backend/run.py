@@ -1,3 +1,11 @@
+import sys
+import os
+
+# Ensure the backend directory itself is on sys.path so that
+# subpackages (core, engine, services) are importable without
+# needing an installed package.
+sys.path.insert(0, os.path.dirname(__file__))
+
 import uvicorn
 from config import get_settings
 
