@@ -249,25 +249,58 @@ def run_common_dim_strip_then_rectpack(
     objective = solver.Objective()
     objective.SetMinimization()
 
-    columns = []
-    variables = []
+    # Try to generate all maximal columns if the problem is small
+    max_pool_size = 2000
+    all_maximal = []
+    
+    def dfs_maximal(current_pattern, current_width, item_idx):
+        if len(all_maximal) >= max_pool_size:
+            return
+        if item_idx == num_items:
+            if current_width <= strip_max_width:
+                is_max = True
+                for i, w in enumerate(unique_widths):
+                    if current_width + w <= strip_max_width:
+                        is_max = False
+                        break
+                if is_max:
+                    all_maximal.append(list(current_pattern))
+            return
+        w = unique_widths[item_idx]
+        max_qty = (strip_max_width - current_width) // w
+        for q in range(max_qty, -1, -1):
+            current_pattern.append(q)
+            dfs_maximal(current_pattern, current_width + q * w, item_idx + 1)
+            current_pattern.pop()
+            
+    dfs_maximal([], 0, 0)
+    
+    if len(all_maximal) < max_pool_size:
+        # Fully enumerated, no need for CG
+        columns = all_maximal
+        MAX_CG_ITER = 0
+    else:
+        # Too many columns, seed with homogeneous patterns and use CG
+        columns = []
+        for i in range(num_items):
+            pattern = [0] * num_items
+            pattern[i] = int(strip_max_width // unique_widths[i])
+            if pattern[i] == 0:  # Piece larger than bin width
+                logger.error("CommonDimStrip: Piece width %d exceeds bin width %d", unique_widths[i], strip_max_width)
+                return fallback_rectpack()
+            columns.append(pattern)
+        MAX_CG_ITER = 1000
 
-    # Seed initial columns (homogeneous patterns)
-    for i in range(num_items):
-        pattern = [0] * num_items
-        pattern[i] = int(strip_max_width // unique_widths[i])
-        if pattern[i] == 0:  # Piece larger than bin width
-            logger.error("CommonDimStrip: Piece width %d exceeds bin width %d", unique_widths[i], strip_max_width)
-            return fallback_rectpack()
-        columns.append(pattern)
-        
+    variables = []
+    for i, pattern in enumerate(columns):
         var = solver.NumVar(0, solver.infinity(), f'lambda_init_{i}')
         variables.append(var)
         objective.SetCoefficient(var, 1)
-        constraints[i].SetCoefficient(var, pattern[i])
+        for j in range(num_items):
+            if pattern[j] > 0:
+                constraints[j].SetCoefficient(var, pattern[j])
 
     # 4c. Column Generation Loop
-    MAX_CG_ITER = 1000
     cg_iter = 0
     while cg_iter < MAX_CG_ITER:
         cg_iter += 1
@@ -303,6 +336,36 @@ def run_common_dim_strip_then_rectpack(
                     continue
         break  # Converged: No new favorable patterns found
 
+    # 4d. Column Pool Enrichment (Randomized Knapsack)
+    if MAX_CG_ITER > 0:
+        enrichment_iters = 100 if num_items <= 15 else 50
+        import random
+        for _ in range(enrichment_iters):
+            kp_model = cp_model.CpModel()
+            kp_vars = [kp_model.NewIntVar(0, demands[i], f'x_{i}') for i in range(num_items)]
+            kp_model.Add(sum(kp_vars[i] * unique_widths[i] for i in range(num_items)) <= strip_max_width)
+            
+            obj_expr = []
+            for i in range(num_items):
+                weight = int(round(unique_widths[i] * random.uniform(0.5, 1.5)))
+                obj_expr.append(kp_vars[i] * weight)
+            kp_model.Maximize(sum(obj_expr))
+            
+            kp_solver = cp_model.CpSolver()
+            kp_solver.parameters.max_time_in_seconds = 0.1
+            status = kp_solver.Solve(kp_model)
+            
+            if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                new_pattern = [kp_solver.Value(kp_vars[i]) for i in range(num_items)]
+                if new_pattern not in columns:
+                    columns.append(new_pattern)
+                    var = solver.NumVar(0, solver.infinity(), f'lambda_{len(columns)-1}')
+                    variables.append(var)
+                    objective.SetCoefficient(var, 1)
+                    for i in range(num_items):
+                        if new_pattern[i] > 0:
+                            constraints[i].SetCoefficient(var, new_pattern[i])
+
     logger.info("Unique widths: %s, Max Width: %s", unique_widths, strip_max_width)
     logger.info("Demands: %s", demands)
     logger.info("Generated columns: %s", columns)
@@ -312,6 +375,8 @@ def run_common_dim_strip_then_rectpack(
     if not ilp_solver:
         logger.error("CommonDimStrip: SCIP solver unavailable")
         return fallback_rectpack()
+        
+    ilp_solver.SetSolverSpecificParametersAsString('limits/gap = 0.0')
         
     ilp_constraints = [ilp_solver.Constraint(demands[i], ilp_solver.infinity()) for i in range(num_items)]
     ilp_objective = ilp_solver.Objective()
