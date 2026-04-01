@@ -411,10 +411,12 @@ export default function LayoutPage() {
         if (data) {
           setProjectName(data.name || '');
           if (data.cutted && data.cutted.length > 0) {
-            const metadata = data.cutted[data.cutted.length - 1]?.metadata || {};
+            const lastItem = data.cutted[data.cutted.length - 1];
+            const hasMetadata = lastItem?.metadata != null;
+            const metadata = hasMetadata ? (lastItem.metadata || {}) : {};
             setOrders(metadata.orders || []);
             setOthers(metadata.others || []);
-            const cuttingPlans = data.cutted.slice(0, -1);
+            const cuttingPlans = hasMetadata ? data.cutted.slice(0, -1) : data.cutted;
             setTotalPages(cuttingPlans.length);
             setAllCutted(cuttingPlans);
             if (cuttingPlans[pageNum - 1]) {

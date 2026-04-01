@@ -89,3 +89,30 @@ export const GROUP_ACCENT_STYLES = [
 export function getGroupAccent(groupIndex: number) {
   return GROUP_ACCENT_STYLES[groupIndex % GROUP_ACCENT_STYLES.length];
 }
+
+export function formatIndices(indices: number[]): string {
+  if (indices.length === 0) return '';
+  const ranges: string[] = [];
+  let start = indices[0];
+  let prev = start;
+
+  for (let i = 1; i <= indices.length; i++) {
+    const curr = indices[i];
+    if (curr !== prev + 1) {
+      if (start === prev) {
+        ranges.push(`${start + 1}`);
+      } else if (start + 1 === prev) {
+        ranges.push(`${start + 1}, ${prev + 1}`);
+      } else {
+        ranges.push(`${start + 1}-${prev + 1}`);
+      }
+      if (i < indices.length) {
+        start = curr;
+        prev = curr;
+      }
+    } else {
+      prev = curr;
+    }
+  }
+  return ranges.join(', ');
+}

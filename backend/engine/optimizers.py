@@ -4,6 +4,17 @@ from typing import Dict, List, Optional, Tuple
 import rectpack
 
 from core.models import Cut, CuttingConfig, Rectangle, SmallPlate
+from engine.complementary_pairs import (
+    band_fill_details_if_applicable,
+    find_complementary_pairs,
+)
+from engine.rectpack_trials import RectpackTrialRunner
+from engine.row_layout import (
+    pack_orders_row_based as pack_row_based_layout,
+    pack_orders_layer_based as pack_layer_based_layout,
+    pack_orders_composite_stack as pack_composite_stack_layout,
+    pack_orders_band_fill as pack_band_fill_layout,
+)
 from engine.packers import (
     BaseStockPacker,
     GuillotineBssfLlasPacker,
@@ -25,6 +36,7 @@ class PlateOptimizer:
             algorithm: rectpack = rectpack.GuillotineBssfMaxas):
         self.config = config
         self.algorithm = algorithm
+        self._trials = RectpackTrialRunner(self)
 
     def create_packer(self, width: int, height: int) -> rectpack.packer:
         """创建 rectpack 装箱器"""
@@ -42,192 +54,65 @@ class PlateOptimizer:
 
         return packer
 
-    def find_complementary_pairs(
-            self, size_groups: Dict, L: int, W: int) -> Tuple[Dict, Dict]:
+    def _select_best_pattern(
+        self,
+        complementary: Dict,
+        pattern_details: Dict,
+        length0: float,
+        width0: float,
+    ) -> Tuple[Tuple, Dict]:
         """
-        找到能够更好组合的尺寸对，解决混合组合优于单一尺寸的问题
-        例如：4a+6c 可能比 8a 或 10c 更优
+        从所有候选互补对中选出利用率最高的模式，并尝试将 composite 升级为 band_fill。
 
         Returns:
-            (complementary_dict, pattern_details_dict)
-            - complementary_dict: {(w1, h1, w2, h2): utilization_gain}
-            - pattern_details_dict: {(w1, h1, w2, h2): {'type': 'row'/'column', 'count1': n1, 'count2': n2, 'rows': num_rows}}
-        """
-        sizes = list(size_groups.keys())
-        complementary = {}
-        pattern_details = {}
-
-        for i, (w1, h1) in enumerate(sizes):
-            # 计算单一尺寸的基准利用率
-            single_count = (L // w1) * (W // h1)
-            single_util = single_count * w1 * h1 / (L * W) if L * W > 0 else 0
-
-            for w2, h2 in sizes[i:]:
-                if (w1, h1) == (w2, h2):
-                    continue
-
-                best_mixed = 0
-                best_strategy = None
-                best_pattern = None
-
-                # 策略1: 行式布局（当高度相同时）- 优先级最高
-                if abs(h1 - h2) < 1:  # 高度相同（考虑浮点误差）
-                    num_rows = int(W // h1)
-                    if num_rows > 0:
-                        # 尝试每行不同的宽度组合
-                        max_count1 = int(L // w1) + 1
-                        for count1 in range(max_count1):
-                            remaining_width = L - count1 * w1
-                            count2 = int(remaining_width // w2)
-
-                            # 计算总面积利用率
-                            area_per_row = count1 * w1 * h1 + count2 * w2 * h2
-                            total_area = area_per_row * num_rows
-                            row_util = total_area / (L * W) if L * W > 0 else 0
-
-                            if row_util > best_mixed:
-                                best_mixed = row_util
-                                best_strategy = f"row-based: {count1}×size1 + {count2}×size2 per row, {num_rows} rows"
-                                best_pattern = {
-                                    'type': 'row',
-                                    'count1': count1,
-                                    'count2': count2,
-                                    'rows': num_rows
-                                }
-
-                # 策略2: 列式布局（原有逻辑）
-                max_n1 = max(1, int(L // w1))
-                for n1 in range(1, max_n1):
-                    used_w = n1 * w1
-                    remaining = L - used_w
-                    n2 = int(remaining // w2)
-                    if n2 == 0:
-                        continue
-
-                    # 每种尺寸在其列中垂直填充
-                    area1 = n1 * w1 * int(W // h1) * h1
-                    area2 = n2 * w2 * int(W // h2) * h2
-                    col_util = (area1 + area2) / (L * W) if L * W > 0 else 0
-
-                    if col_util > best_mixed:
-                        best_mixed = col_util
-                        best_strategy = f"column-based: {n1} cols size1 + {n2} cols size2"
-                        best_pattern = {
-                            'type': 'column',
-                            'count1': n1,
-                            'count2': n2
-                        }
-
-                # 如果混合组合比单一尺寸好至少2%，记录下来
-                if best_mixed > single_util + 0.02:
-                    gain = best_mixed - single_util
-                    key = (w1, h1, w2, h2)
-                    complementary[key] = gain
-                    pattern_details[key] = best_pattern
-                    logger.info(
-                        f"Found complementary pair: ({w1}x{h1}, {w2}x{h2}) with {
-                            gain:.2%} gain using {best_strategy}")
-
-        return complementary, pattern_details
-
-    def pack_orders_row_based(self,
-                              big_plate: SmallPlate,
-                              orders: List[SmallPlate],
-                              size1_key: Tuple,
-                              size2_key: Tuple,
-                              count1_per_row: int,
-                              count2_per_row: int) -> Tuple[List[Cut],
-                                                            List[SmallPlate]]:
-        """
-        使用行式布局装箱（当检测到行式互补模式时）
-
-        Args:
-            big_plate: 大板
-            orders: 订单列表
-            size1_key: 尺寸1的键 (width, height)
-            size2_key: 尺寸2的键 (width, height)
-            count1_per_row: 每行尺寸1的数量
-            count2_per_row: 每行尺寸2的数量
+            (best_pair, details)
         """
         bt = self.config.blade_thickness
-        w1, h1 = size1_key
-        w2, h2 = size2_key
 
-        # 计算行数
-        num_rows = int(big_plate.width // h1)
+        composite_pairs = {
+            k: v for k, v in pattern_details.items()
+            if v.get('type') == 'composite' and k in complementary
+        }
+        if composite_pairs:
+            best_pair = max(composite_pairs, key=lambda k: composite_pairs[k].get('util', 0))
+        else:
+            best_pair = max(complementary, key=complementary.get)
 
-        # 分组订单
-        size1_orders = []
-        size2_orders = []
-        other_orders = []
+        details = pattern_details[best_pair]
 
-        for i, order in enumerate(orders):
-            w_with_blade = order.length + bt
-            h_with_blade = order.width + bt
+        if not composite_pairs:
+            return best_pair, details
 
-            if abs(w_with_blade - w1) < 1 and abs(h_with_blade - h1) < 1:
-                size1_orders.append((i, order))
-            elif abs(w_with_blade - w2) < 1 and abs(h_with_blade - h2) < 1:
-                size2_orders.append((i, order))
-            else:
-                other_orders.append((i, order))
+        # 扫描所有 composite 对，取 band-fill 可行且 util 最优者
+        bf_best: Optional[Dict] = None
+        bf_pair_key = None
+        for k, v in composite_pairs.items():
+            if v.get('type') != 'composite':
+                continue
+            bf = band_fill_details_if_applicable(k, int(length0), int(width0), bt)
+            if bf is None:
+                continue
+            if bf_best is None or bf['util'] > bf_best['util'] + 1e-12:
+                bf_best = bf
+                bf_pair_key = k
 
-        cuts = []
-        packed_indices = set()
+        comp_util = details.get('util', 0)
+        if bf_best is not None and bf_pair_key is not None and bf_best['util'] > comp_util + 1e-9:
+            logger.info(
+                "Selected band-fill over top composite (%.4f > %.4f util)",
+                bf_best['util'],
+                comp_util,
+            )
+            return bf_pair_key, bf_best
 
-        # 按行放置
-        current_y = 0
-        for row_idx in range(num_rows):
-            current_x = 0
+        # If the top composite pair itself qualifies for band-fill with equal or better util, upgrade it
+        if details.get('type') == 'composite':
+            bf = band_fill_details_if_applicable(best_pair, int(length0), int(width0), bt)
+            if bf is not None and bf.get('util', 0) >= comp_util - 1e-9:
+                logger.info("Upgraded composite pair to band-fill")
+                return best_pair, bf
 
-            # 放置尺寸1的板材
-            for _ in range(count1_per_row):
-                if size1_orders:
-                    idx, order = size1_orders.pop(0)
-                    cut = Cut(
-                        plate=order,
-                        x1=current_x,
-                        y1=current_y,
-                        x2=current_x + order.length,
-                        y2=current_y + order.width,
-                        is_stock=False
-                    )
-                    cuts.append(cut)
-                    packed_indices.add(idx)
-                    current_x += order.length + bt
-
-            # 放置尺寸2的板材
-            for _ in range(count2_per_row):
-                if size2_orders:
-                    idx, order = size2_orders.pop(0)
-                    cut = Cut(
-                        plate=order,
-                        x1=current_x,
-                        y1=current_y,
-                        x2=current_x + order.length,
-                        y2=current_y + order.width,
-                        is_stock=False
-                    )
-                    cuts.append(cut)
-                    packed_indices.add(idx)
-                    current_x += order.length + bt
-
-            current_y += int(h1)
-
-            # 如果两种尺寸都用完了，提前结束
-            if not size1_orders and not size2_orders:
-                break
-
-        # 剩余订单
-        remaining = []
-        for i, order in enumerate(orders):
-            if i not in packed_indices:
-                remaining.append(order)
-
-        logger.info(
-            f"Row-based packing: placed {len(cuts)} pieces in {row_idx + 1} rows")
-
-        return cuts, remaining
+        return best_pair, details
 
     def _sort_orders_for_optimal_packing(self,
                                          orders: List[SmallPlate],
@@ -297,12 +182,17 @@ class PlateOptimizer:
             size_groups[key].append(info)
 
         # 使用互补尺寸检测（混合组合优化）
-        complementary, pattern_details = self.find_complementary_pairs(
+        complementary, pattern_details = find_complementary_pairs(
             size_groups, length0, width0)
 
+        # 多种尺寸并存时，互补/复合列/band-fill 只针对「主尺寸对」，会把其余规格挤到队尾，
+        # 逐张板重复该策略会导致极差结果（例如 7 种零件时板数接近翻倍）。仅少量规格组时才启用。
+        _max_groups_for_complementary = 3
+
         # 如果找到互补尺寸对，优先使用交错排列
-        if complementary:
-            best_pair = max(complementary, key=complementary.get)
+        if complementary and len(size_groups) <= _max_groups_for_complementary:
+            best_pair, details = self._select_best_pattern(
+                complementary, pattern_details, length0, width0)
             w1, h1, w2, h2 = best_pair
             group1 = size_groups.get((w1, h1), [])
             group2 = size_groups.get((w2, h2), [])
@@ -310,12 +200,13 @@ class PlateOptimizer:
             # 存储模式详情供pack_orders使用
             self._detected_pattern = {
                 'pair': best_pair,
-                'details': pattern_details[best_pair]
+                'details': details
             }
 
             logger.info(
-                f"Using complementary pair strategy: ({w1}x{h1}, {w2}x{h2}) with {
-                    complementary[best_pair]:.2%} gain")
+                "Using complementary pair strategy: (%sx%s, %sx%s) with %.2f%% gain",
+                w1, h1, w2, h2, complementary[best_pair] * 100,
+            )
 
             # 交错排列互补尺寸
             result = []
@@ -326,10 +217,17 @@ class PlateOptimizer:
                 if i < len(group2):
                     result.append(group2[i])
 
-            # 添加其他尺寸的板材
-            for key, group in size_groups.items():
-                if key not in [(w1, h1), (w2, h2)]:
-                    result.extend(group)
+            # 添加其他尺寸的板材 — 但对于 composite 模式，将其他 small 类型放在 group2 之前，
+            # 以便它们有机会和剩余的 group1 (big) 配合使用
+            other_keys = [k for k in size_groups.keys() if k not in [(w1, h1), (w2, h2)]]
+            other_groups = [size_groups[k] for k in other_keys]
+            if details.get('type') in ('composite', 'band_fill') and other_groups:
+                for og in other_groups:
+                    result.extend(og)
+            else:
+                for key, group in size_groups.items():
+                    if key not in [(w1, h1), (w2, h2)]:
+                        result.extend(group)
 
             # 转换为结果格式
             return [(info['index'], info['order'], info['rotate'])
@@ -598,115 +496,108 @@ class PlateOptimizer:
 
         return result
 
+    def _pick_rotation(self, order: SmallPlate, big_plate: SmallPlate) -> bool:
+        """与 _sort_orders_for_optimal_packing 中 get_optimal_size 一致的旋转判定。"""
+        bt = self.config.blade_thickness
+        length0 = big_plate.length
+        width0 = big_plate.width
+        x1 = order.length + bt
+        x2 = order.width + bt
+        fit1 = (length0 // x1) * (width0 //
+                                  x2) if x1 <= length0 and x2 <= width0 else 0
+        fit2 = (length0 // x2) * (width0 //
+                                  x1) if x2 <= length0 and x1 <= width0 else 0
+        cond1 = (x1 < x2 and (length0 // x2) * (width0 // x1)
+                 >= (length0 // x1) * (width0 // x2))
+        cond2 = (abs(x1 - x2) / max(x1, x2) < 0.56 and (length0 // x2)
+                 * (width0 // x1) > (length0 // x1) * (width0 // x2))
+        should_rotate = cond1 or cond2
+        if fit2 > fit1 or (fit2 == fit1 and should_rotate):
+            return True
+        return False
+
+    def _indices_to_sorted_tuples(
+            self,
+            orders: List[SmallPlate],
+            indices: List[int],
+            big_plate: SmallPlate) -> List[Tuple[int, SmallPlate, bool]]:
+        return [
+            (i, orders[i], self._pick_rotation(orders[i], big_plate))
+            for i in indices
+        ]
+
     def pack_orders(self,
                     big_plate: SmallPlate,
                     orders: List[SmallPlate]) -> Tuple[List[Cut],
                                                        List[SmallPlate]]:
         """使用 rectpack 装箱订单板材"""
-        bt = self.config.blade_thickness
 
-        # 对订单进行排序以优化装箱利用率
-        sorted_orders = self._sort_orders_for_optimal_packing(
+        # 对订单进行排序以优化装箱利用率（并设置互补/行式检测状态）
+        primary_sorted = self._sort_orders_for_optimal_packing(
             orders, big_plate)
+        # 互补/行式排序后的零件序列（必须与 _detected_pattern 的穿插策略一致）
+        layout_orders = [t[1] for t in primary_sorted]
 
         # 检查是否检测到行式布局模式
-        if hasattr(self, '_detected_pattern') and self._detected_pattern:
+        if (
+            self.config.enable_row_complementary
+            and hasattr(self, '_detected_pattern')
+            and self._detected_pattern
+        ):
             pattern = self._detected_pattern
             if pattern['details']['type'] == 'row':
                 logger.info("Using custom row-based packing")
                 w1, h1, w2, h2 = pattern['pair']
-                return self.pack_orders_row_based(
-                    big_plate, orders,
-                    (w1, h1), (w2, h2),
+                return pack_row_based_layout(
+                    self.config,
+                    big_plate,
+                    layout_orders,
+                    (w1, h1),
+                    (w2, h2),
                     pattern['details']['count1'],
-                    pattern['details']['count2']
+                    pattern['details']['count2'],
                 )
-
-        # 否则使用标准的rectpack装箱
-        packer = self.create_packer(big_plate.length, big_plate.width)
-
-        # 添加所有订单矩形（使用排序后的顺序和预计算的旋转状态）
-        for orig_idx, order, should_rotate in sorted_orders:
-            # 加锯片厚度后的订单板尺寸
-            x1 = order.length + bt
-            x2 = order.width + bt
-
-            if should_rotate:
-                packer.add_rect(x2, x1, rid=orig_idx)  # 旋转后加入，使用原始索引
-            else:
-                packer.add_rect(x1, x2, rid=orig_idx)  # 原方向加入，使用原始索引
-
-        # 执行装箱
-        packer.pack()
-
-        # 提取结果
-        cuts = []
-        packed_indices = set()
-
-        for bin_data in packer:
-            for rect in bin_data:
-                # 修复：rectpack返回Rectangle对象，需要访问其属性
-                try:
-                    # 调试：打印Rectangle对象的所有属性
-                    if hasattr(rect, '__dict__'):
-                        logger.debug(f"Rectangle attributes: {rect.__dict__}")
-                    else:
-                        logger.debug(
-                            f"Rectangle dir: {[attr for attr in dir(rect) if not attr.startswith('_')]}")
-
-                    x = rect.x
-                    y = rect.y
-                    w = rect.width
-                    h = rect.height
-
-                    # 尝试多种方式获取rid
-                    rid = None
-                    for attr_name in ['rid', 'id', 'rect_id', 'tag']:
-                        if hasattr(rect, attr_name):
-                            rid = getattr(rect, attr_name)
-                            break
-
-                    # 如果没有rid，通过匹配找到对应的订单
-                    if rid is None:
-                        rid = self._find_matching_order_index(
-                            orders,
-                            w - self.config.blade_thickness,
-                            h - self.config.blade_thickness,
-                            packed_indices)
-
-                except AttributeError as e:
-                    logger.warning(
-                        f"Error accessing Rectangle attributes: {e}")
-                    logger.warning(f"Rectangle type: {type(rect)}")
-                    logger.warning(
-                        f"Available attributes: {[attr for attr in dir(rect) if not attr.startswith('_')]}")
-                    continue
-
-                if rid is None or rid in packed_indices:
-                    continue
-
-                order = orders[rid]
-
-                # 判断是否旋转了
-                rotated = (w - self.config.blade_thickness != order.length)
-                actual_length = order.width if rotated else order.length
-                actual_width = order.length if rotated else order.width
-
-                cut = Cut(
-                    plate=order,
-                    x1=x,
-                    y1=y,
-                    x2=x + actual_length,
-                    y2=y + actual_width,
-                    is_stock=False
+            elif pattern['details']['type'] == 'layer':
+                logger.info("Using custom layer-based packing")
+                w1, h1, w2, h2 = pattern['pair']
+                return pack_layer_based_layout(
+                    self.config,
+                    big_plate,
+                    layout_orders,
+                    (w1, h1),
+                    (w2, h2),
+                    pattern['details']['r1'],
+                    pattern['details']['r2'],
+                    pattern['details']['c1'],
+                    pattern['details']['c2'],
                 )
-                cuts.append(cut)
-                packed_indices.add(rid)
+            elif pattern['details']['type'] == 'composite':
+                logger.info("Using custom composite-stack packing")
+                return pack_composite_stack_layout(
+                    big_plate,
+                    layout_orders,
+                    pattern['details'],
+                    self.config.blade_thickness,
+                )
+            elif pattern['details']['type'] == 'band_fill':
+                d = pattern['details']
+                logger.info(
+                    "Using band-fill packing (%d big + %d bottom strips + %d mid strips)",
+                    d.get("n_big", 2), d.get("n_bottom", 3), d.get("n_mid", 1),
+                )
+                cuts, rem = pack_band_fill_layout(
+                    big_plate,
+                    layout_orders,
+                    pattern['details'],
+                    self.config.blade_thickness,
+                )
+                if not cuts:
+                    return self._trials.best_rectpack_for_bin(
+                        orders, big_plate, primary_sorted)
+                return cuts, rem
 
-        # 返回切割结果和剩余订单
-        remaining = [orders[i]
-                     for i in range(len(orders)) if i not in packed_indices]
-        return cuts, remaining
+        return self._trials.best_rectpack_for_bin(
+            orders, big_plate, primary_sorted)
 
     def _find_matching_order_index(
             self,
@@ -895,7 +786,8 @@ class StockOptimizer:
                                                            reverse=True)
                 arrangements.append(("长条优先", long_first))
 
-            # 测试每种排列
+            # 测试每种排列，同时记录"原始顺序"结果以备对比（避免事后重跑）
+            default_utilization = 0.0
             for arrangement_name, sorted_stock in arrangements:
                 logger.debug(f"测试排列: {arrangement_name}")
 
@@ -904,6 +796,9 @@ class StockOptimizer:
 
                     logger.debug(
                         f"  {arrangement_name} - 利用率: {utilization:.3%}, 切割数: {len(cuts)}")
+
+                    if arrangement_name == "原始顺序":
+                        default_utilization = utilization
 
                     # 选择更优的方案
                     # 优先考虑利用率，其次考虑切割数量
@@ -930,14 +825,9 @@ class StockOptimizer:
             logger.info(f"总利用率: {best_utilization:.2%}")
             logger.info(f"放置了 {len(best_cuts)} 块库存板材")
 
-            # 显示排列优化的收益
-            if best_arrangement != "原始顺序":
-                # 计算默认方案的利用率进行比较
-                default_cuts, default_utilization = _try_stock_arrangement(
-                    stock_plates)
-                improvement = best_utilization - default_utilization
-                if improvement > 0.001:
-                    logger.info(f"相比默认排列提升利用率: +{improvement:.2%}")
+            improvement = best_utilization - default_utilization
+            if improvement > 0.001:
+                logger.info(f"相比默认排列提升利用率: +{improvement:.2%}")
 
             return best_cuts
 
@@ -986,8 +876,7 @@ class StockOptimizer:
             self,
             container: Rectangle,
             occupied: List[Rectangle]) -> List[Rectangle]:
-        """计算除去已占用区域后的空闲区域（简化版本）"""
-        # 这是一个简化实现，实际应用中可能需要更复杂的算法
+        """计算除去已占用区域后的空闲区域（经过水平预合并优化）"""
         free_sections = []
 
         # 找出所有占用区域的边界
@@ -1002,23 +891,41 @@ class StockOptimizer:
         y_coords = sorted(set(y_coords))
 
         # 检查每个网格单元是否空闲
-        for i in range(len(x_coords) - 1):
-            for j in range(len(y_coords) - 1):
-                x, y = x_coords[i], y_coords[j]
-                w, h = x_coords[i + 1] - x, y_coords[j + 1] - y
+        for j in range(len(y_coords) - 1):
+            y = y_coords[j]
+            h = y_coords[j + 1] - y
+            if h <= 0:
+                continue
 
-                # 检查这个区域是否与任何占用区域重叠
-                test_rect = Rectangle(x, y, w, h)
+            # 筛选在当前高度范围内可能相交的占用区域
+            active_occupied = [
+                occ for occ in occupied
+                if occ.y < y + h and occ.top > y
+            ]
+
+            row_sections = []
+            for i in range(len(x_coords) - 1):
+                x = x_coords[i]
+                w = x_coords[i + 1] - x
+                if w <= 0:
+                    continue
+
                 is_free = True
-                for occ in occupied:
-                    if test_rect.intersects(occ):
+                for occ in active_occupied:
+                    if occ.x < x + w and occ.right > x:
                         is_free = False
                         break
 
-                if is_free and w > 0 and h > 0:
-                    free_sections.append(Rectangle(x, y, w, h))
+                if is_free:
+                    if row_sections and row_sections[-1].right == x:
+                        # 立即水平合并
+                        row_sections[-1].width += w
+                    else:
+                        row_sections.append(Rectangle(x, y, w, h))
+            
+            free_sections.extend(row_sections)
 
-        # 合并相邻的空闲区域
+        # 跨行合并相邻的空闲区域
         merged = self._merge_adjacent_sections(free_sections)
         return merged
 

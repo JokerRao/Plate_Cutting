@@ -422,6 +422,42 @@ def test_rate_limiting():
     # 至少有一个请求应该成功
     assert any(r.status_code == 200 for r in responses)
 
+def test_sync_optimize_multistart_in_optimization_details():
+    """同步 /optimize：multistart_runs / seed 写入 optimization_details。"""
+    time.sleep(1.2)
+    request_data = {
+        "uid": "test_user",
+        "project_id": "test_project",
+        "plates": [
+            {
+                "id": "plate1",
+                "length": 2000,
+                "width": 1000,
+                "quantity": 1,
+            }
+        ],
+        "orders": [
+            {
+                "id": "order1",
+                "length": 500,
+                "width": 300,
+                "quantity": 1,
+            }
+        ],
+        "optimization": True,
+        "saw_blade": 3,
+        "multistart_runs": 3,
+        "multistart_seed": 12345,
+    }
+    response = client.post("/optimize", json=request_data)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["code"] == 0
+    details = data["optimization_details"]
+    assert details["multistart_runs"] == 3
+    assert details["multistart_seed"] == 12345
+
+
 def test_saw_blade_parameter():
     """测试锯片宽度参数"""
     time.sleep(1.2)  # 避免紧接在限流测试之后同一秒内仍被限流
@@ -460,6 +496,97 @@ def test_health_check():
     data = response.json()
     assert data["status"] == "ok"
     assert data["version"] == get_settings().API_VERSION
+
+
+def test_optimize_async_submit_and_poll():
+    """异步提交后轮询直至 completed。"""
+    request_data = {
+        "uid": "test_user",
+        "project_id": "test_project",
+        "plates": [
+            {
+                "id": "plate1",
+                "length": 2000,
+                "width": 1000,
+                "quantity": 1,
+                "description": "Standard plate"
+            }
+        ],
+        "orders": [
+            {
+                "id": "order1",
+                "length": 500,
+                "width": 300,
+                "quantity": 2,
+                "description": "Small piece"
+            },
+            {
+                "id": "order2",
+                "length": 800,
+                "width": 400,
+                "quantity": 1,
+                "description": "Medium piece"
+            }
+        ],
+        "optimization": True,
+        "saw_blade": 3,
+        "multistart_runs": 1,
+    }
+    submit = client.post("/optimize/async", json=request_data)
+    assert submit.status_code == 200
+    job_id = submit.json()["job_id"]
+    done = None
+    for _ in range(150):
+        poll = client.get(f"/optimize/jobs/{job_id}")
+        assert poll.status_code == 200
+        st = poll.json()
+        if st["status"] == "completed":
+            done = st
+            break
+        if st["status"] == "failed":
+            pytest.fail(st.get("error") or "async job failed")
+        time.sleep(0.05)
+    assert done is not None
+    assert done["result"]["code"] == 0
+    assert done["result"]["pieces_placed"] > 0
+
+
+def test_optimize_job_not_found():
+    r = client.get(
+        "/optimize/jobs/00000000-0000-0000-0000-000000000000")
+    assert r.status_code == 404
+
+
+def test_optimize_async_validate_error_400():
+    """业务校验失败时异步接口返回 400 + detail.code。"""
+    request_data = {
+        "uid": "test_user",
+        "project_id": "test_project",
+        "plates": [
+            {
+                "id": "plate1",
+                "length": 1000,
+                "width": 500,
+                "quantity": 1,
+                "description": "Small plate"
+            }
+        ],
+        "orders": [
+            {
+                "id": "order1",
+                "length": 2000,
+                "width": 1000,
+                "quantity": 1,
+                "description": "Oversized piece"
+            }
+        ],
+        "optimization": True
+    }
+    r = client.post("/optimize/async", json=request_data)
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert detail["code"] == 1005
+
 
 # 在其他测试之间添加延迟
 @pytest.fixture(autouse=True)

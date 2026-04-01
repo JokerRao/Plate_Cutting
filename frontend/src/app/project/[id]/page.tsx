@@ -8,7 +8,7 @@ import UnsavedChangesPrompt from '@/components/UnsavedChangesPrompt';
 import GalleryToast from '@/components/GalleryToast';
 import ProjectLayoutNavPills, { ProjectListNavButton } from '@/components/ProjectLayoutNavPills';
 import { useAppDialog } from '@/components/AppDialog';
-import { getApiUrl } from '@/config/api';
+import { getApiUrl, API_CONFIG } from '@/config/api';
 
 /** 用于脏检查：对每个对象的键排序后再序列化，避免 JSON.stringify 键序不一致导致误判「有未保存更改」 */
 function stableStringifyForDirtyCheck(value: unknown): string {
@@ -164,8 +164,10 @@ export default function ProjectDetailPage() {
 
   const projectHasCutResults = useMemo(() => {
     const c = project?.cutted;
-    if (!Array.isArray(c) || c.length < 2) return false;
-    return c.slice(0, -1).length > 0;
+    if (!Array.isArray(c) || c.length === 0) return false;
+    const last = c[c.length - 1];
+    const hasMetadata = last != null && typeof last === 'object' && 'metadata' in (last as object);
+    return hasMetadata ? c.length > 1 : c.length > 0;
   }, [project]);
 
   const savedCuttingSignature = useMemo(() => {
@@ -288,7 +290,7 @@ export default function ProjectDetailPage() {
 
         if (updateError) throw updateError;
 
-        const response = await fetch(getApiUrl('OPTIMIZE'), {
+        const submitResponse = await fetch(getApiUrl('OPTIMIZE_ASYNC'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -299,16 +301,63 @@ export default function ProjectDetailPage() {
             others,
             optimization: Boolean(optimization),
             saw_blade: Number(sawBlade) || 4,
+            multistart_runs: 1, // 缺省填 1，如有表单控制可按需传入
           }),
         });
 
-        const data = await response.json();
+        if (!submitResponse.ok) {
+          let errorMsg = '异步任务提交失败';
+          try {
+            const errData = await submitResponse.json();
+            if (errData.detail?.message) errorMsg = errData.detail.message;
+            else if (errData.message) errorMsg = errData.message;
+          } catch {}
+          throw new Error(errorMsg);
+        }
 
-        if (data.code === 0) {
+        const submitData = await submitResponse.json();
+        const jobId = submitData.job_id;
+        if (!jobId) {
+          throw new Error('未获取到任务ID');
+        }
+
+        let runResult = null;
+        let jobError = null;
+
+        // 轮询后台状态
+        let currentInterval = 1000; // 首次轮询给 1 秒的快速检测窗口
+        while (true) {
+          // 在轮询前按需等待
+          await new Promise(resolve => setTimeout(resolve, currentInterval));
+          currentInterval = API_CONFIG.POLLING_INTERVAL_MS; // 之后全部切为配置设定的长间隔
+          
+          const pollResponse = await fetch(`${getApiUrl('OPTIMIZE_JOB')}/${jobId}`);
+          
+          if (!pollResponse.ok) {
+            throw new Error('轮询查询排版进度失败');
+          }
+          
+          const pollData = await pollResponse.json();
+          
+          if (pollData.status === 'completed') {
+            runResult = pollData.result;
+            break;
+          } else if (pollData.status === 'failed') {
+            jobError = pollData.error || '排版后台发生未知错误';
+            break;
+          }
+          // 如果仍是 pending / running，下一次循环将等待 10s
+        }
+
+        if (jobError) {
+          throw new Error(jobError);
+        }
+
+        if (runResult && runResult.code === 0) {
           const { error: cutError } = await supabase
             .from('Projects')
             .update({
-              cutted: data.cutting_plans,
+              cutted: runResult.cutting_plans,
               updated_at: new Date().toISOString(),
             })
             .eq('id', projectId)
@@ -326,7 +375,7 @@ export default function ProjectDetailPage() {
             plates,
             orders,
             others,
-            cutted: data.cutting_plans,
+            cutted: runResult.cutting_plans,
             updated_at: now,
           }));
 
@@ -348,7 +397,8 @@ export default function ProjectDetailPage() {
           }
           return true;
         }
-        throw new Error(data.message || '切板失败');
+        
+        throw new Error(runResult?.message || '切板请求失败');
       } catch (error: unknown) {
         const msg =
           error instanceof Error

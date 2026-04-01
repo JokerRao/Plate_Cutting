@@ -26,10 +26,12 @@ interface Item {
   customer?: string | null
 }
 
-/** cutted 最后一项为元数据，前面为各页排版方案 */
+/** cutted 最后一项为元数据（若存在），前面为各页排版方案 */
 function cuttingPlanPages(cutted: unknown): unknown[] {
   if (!Array.isArray(cutted) || cutted.length === 0) return [];
-  return cutted.slice(0, -1);
+  const last = cutted[cutted.length - 1];
+  const hasMetadata = last != null && typeof last === 'object' && 'metadata' in (last as object);
+  return hasMetadata ? cutted.slice(0, -1) : cutted;
 }
 
 /** Supabase PostgrestError 等通常不是 Error 实例，直接 instanceof 会得到「未知错误」 */

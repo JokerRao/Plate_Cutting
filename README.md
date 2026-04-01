@@ -1,100 +1,81 @@
 # 板材切割优化系统
 
-一个专业的板材切割优化Web应用系统，提供智能的切割方案生成和可视化展示。
+全栈板材切割优化应用：基于 2D 装箱与可选 OR-Tools 生成切割方案，支持项目管理、Supabase 存储与排版可视化。
 
-## 🚀 项目特色
-
-- **智能优化算法**：基于先进算法的板材切割优化
-- **可视化展示**：直观的切割方案图形化展示
-- **项目管理**：完整的项目生命周期管理
-- **实时统计**：详细的利用率和使用情况统计
-- **响应式设计**：支持多设备访问的现代化界面
-
-## 📁 项目结构
+## 项目结构
 
 ```
 Plate_Cutting/
-├── frontend/                 # 前端项目
-│   ├── src/
-│   │   ├── app/             # Next.js 应用页面
-│   │   ├── components/      # React 组件
-│   │   ├── config/          # 配置文件
-│   │   └── utils/           # 工具函数
-│   ├── public/              # 静态资源
-│   └── package.json         # 前端依赖
-├── backend/                  # 后端项目
-│   ├── api.py               # FastAPI 路由与中间件入口
-│   ├── config.py            # 配置管理 (Pydantic Settings)
-│   ├── run.py               # Uvicorn 服务启动
-│   ├── core/                # 基础模块层
-│   │   ├── models.py        # 数据类：CuttingConfig, SmallPlate, Cut, Rectangle
-│   │   └── utils.py         # 工具函数：DataConverter, 指标计算, 算法比较
-│   ├── engine/              # 算法引擎层
-│   │   ├── packers.py       # 装箱算法：MaxRects BAF, Guillotine BSSF+LLAS
-│   │   └── optimizers.py    # 优化调度：PlateOptimizer, StockOptimizer
-│   ├── services/            # 业务服务层
-│   │   └── cutting_service.py  # 核心入口：optimize_cutting, run_single_algorithm
-│   ├── tests/               # API 测试 (pytest)
-│   └── requirements.txt     # Python 依赖
-└── README.md               # 项目说明
+├── frontend/                    # Next.js（App Router）
+│   ├── src/app/                 # 页面：project、layout、login
+│   ├── src/components/
+│   ├── src/config/api.ts        # 后端 API 基址与路径
+│   └── package.json
+├── backend/
+│   ├── api.py                   # FastAPI：/optimize、/optimize/async、健康检查
+│   ├── optimization_jobs.py     # 异步优化任务注册表
+│   ├── config.py                # Pydantic Settings（.env.local）
+│   ├── run.py                   # Uvicorn 入口
+│   ├── core/
+│   │   ├── models.py            # CuttingConfig、SmallPlate、Cut、Rectangle
+│   │   ├── utils.py             # DataConverter 等
+│   │   └── metrics/             # 方案指标、选优、日志（与算法解耦）
+│   ├── engine/
+│   │   ├── optimizers.py        # PlateOptimizer、StockOptimizer
+│   │   ├── packers.py           # 库存填缝：MaxRects BAF、Guillotine BSSF+LLAS
+│   │   ├── complementary_pairs.py
+│   │   ├── row_layout.py        # 行式互补排布
+│   │   ├── rectpack_trials.py   # 单张板 rectpack 多序试探
+│   │   ├── ortools_packing.py   # OR-Tools：面积分板、单张 2D CP-SAT
+│   │   ├── ortools_plate_engines.py
+│   │   ├── cutting_algorithms/  # rectpack / OR-Tools 算法注册与配置解析
+│   │   └── pipeline/            # 输入归一、顺序装箱、refine、追踪日志
+│   ├── services/
+│   │   └── cutting_service.py   # optimize_cutting、multistart、单算法入口
+│   ├── tests/                   # pytest（API、行式互补、OR-Tools）
+│   └── requirements.txt
+└── README.md
 ```
 
-## 🛠️ 技术栈
+说明：业务优化入口为 **`services/cutting_service.py`** 与 **`api.py`**（仓库内无独立 `main.py` 优化模块）。
+
+## 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| 前端 | Next.js、React、TypeScript、Tailwind CSS、Supabase 客户端 |
+| 后端 | FastAPI、Pydantic Settings、slowapi、**rectpack**、可选 **ortools** |
+| 数据 | Supabase（认证与项目数据） |
+
+## 快速开始
+
+**环境**：Node.js 18+、Python 3.10+（推荐 3.12）、Git。
 
 ### 前端
-- **Next.js 15** - React 全栈框架
-- **TypeScript** - 类型安全的 JavaScript
-- **Tailwind CSS** - 实用优先的 CSS 框架
-- **Supabase** - 实时数据库和认证服务
 
-### 后端
-- **FastAPI** - 现代、快速的 Python Web 框架
-- **Python 3.8+** - 编程语言
-- **Supabase** - 数据库服务
-- **Pydantic** - 数据验证
-
-## 🚀 快速开始
-
-### 环境要求
-- Node.js 18+
-- Python 3.8+
-- Git
-
-### 1. 克隆项目
-```bash
-git clone <repository-url>
-cd Plate_Cutting
-```
-
-### 2. 前端设置
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-前端服务将在 http://localhost:3000 启动
 
-### 3. 后端设置
+开发地址：<http://localhost:3000>
+
+### 后端
+
 ```bash
 cd backend
 python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
-
+source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python run.py
 ```
-后端服务将在 http://localhost:8000 启动
 
-### 4. 环境配置
+API 默认：<http://localhost:8000>，文档：<http://localhost:8000/docs>
 
-前后端各自使用独立的 `.env.local`（路径不同，变量名也不同）。
+### 环境变量
 
-**后端**（`backend/.env.local`）：
+**后端** `backend/.env.local`：
 
 ```env
 HOST=127.0.0.1
@@ -103,7 +84,7 @@ SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_key
 ```
 
-**前端**（`frontend/.env.local`）：
+**前端** `frontend/.env.local`：
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
@@ -111,177 +92,112 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-## 📖 使用指南
+## 使用流程（产品）
 
-### 项目管理
-1. **创建项目**：在项目列表页面点击"新建项目"
-2. **编辑信息**：设置项目名称、详情和描述
-3. **配置参数**：设置锯片宽度和优化模式
+1. 登录后在 **项目列表** 新建或打开项目。
+2. 在 **项目详情** 维护大板、订单零件、余料（others）、锯片厚度与是否启用库存优化。
+3. 执行 **切板**：前端调用 `POST /optimize`，将返回的 `cutting_plans` 写回项目。
+4. 在 **排版页** 查看 SVG 切割布局与利用率。
 
-### 数据管理
-1. **板材信息**：添加大板材的尺寸和数量
-2. **零件信息**：添加需要切割的零件尺寸和数量
-3. **常用尺寸**：管理常用的零件尺寸信息
+## 切割算法与架构要点
 
-### 切割优化
-1. **参数设置**：选择优化模式（正常/优化）
-2. **执行优化**：点击"切板"按钮开始优化
-3. **查看结果**：在排版页面查看切割方案
-4. **统计分析**：查看利用率和使用情况统计
+- **主装箱（大板上的订单件）**：以 `rectpack` 多种算法类为主（如 Guillotine、MaxRects、Skyline）；算法 ID 在 `engine/cutting_algorithms/packing_registry.py` 注册，可通过环境变量 **`CUTTING_ALGORITHMS_ENABLED`** 控制 `auto` 模式下参与比较的子集。
+- **可选 OR-Tools**：`ORToolsAssignMaxRects`（面积分板 + 内层 rectpack）、`ORToolsCP2D`（单张板 2D CP-SAT，大件数回退 rectpack）。相关参数见 `config.py`（`ORTOOLS_*`）。
+- **互补对与行式排布**：`complementary_pairs` + `row_layout`，由 `PlateOptimizer` 在启用行式互补时选用。
+- **库存填缝**：`StockOptimizer` + `packers.py`；策略 ID 由 **`STOCK_ALGORITHMS_ENABLED`** 限制时可解析为 `stock_registry`。
+- **指标与选优**：`core/metrics/`（利用率、板数、未完成订单等），`auto` 模式对多算法结果做字典序比较选优。
+- **后处理 · refine**：低利用率板可触发多轮 **refine**（`engine/pipeline/refine.py`），仅当整体指标严格变好时采纳。
+- **后处理 · 布局整合（Layout Consolidation）**：全局择优后、返回结果前，`engine/pipeline/consolidate.py` 将「独板版型」（只出现一次的排版组合）的订单件汇总重排，尝试减少版型种类数（例：`5×A + 1×B + 1×C → 5×A + 2×B`）。只有版型数严格减少（且板数不增）或板数严格减少时才采纳，最多 3 轮。
+- **后处理 · 切割简化（Cut Simplifier）**：整合之后、`engine/pipeline/cut_simplifier.py` 按版型将订单件重排为行式齐头（Guillotine 行），使订单件产生的内部切割线数（唯一内水平线 + 唯一内垂线）严格减少时才采纳；再 `finalize` 补余板。
+- **流水线**：`engine/pipeline/` 负责输入归一、顺序逐板装箱、refine、布局整合、切割简化、可选 **`CUTTING_TRACE_LOG_STAGES` / `CUTTING_DEBUG_DUMP_DIR`** 调试输出。
 
-## 🔧 核心功能
+## 测试结构
 
-### 前端功能
-- **项目列表** (`/project`)：项目管理和列表展示
-- **项目详情** (`/project/[id]`)：项目信息编辑和数据管理
-- **排版展示** (`/layout/[id]`)：切割方案可视化展示
+- **正式测试集**：`backend/tests/` 文件夹下包含了核心功能的自动化测试（单元和集成测试）。运行方式：`cd backend && pytest tests/ -v`
+- **临时验证脚本**：项目根目录曾有一些临时排查、校验的测试和分析脚本（如 `test_expert.py`、`test_api.py` 等）。为保持代码库整洁，它们已统一迁移至 `scripts/test_scripts/` 目录下。
 
-### 后端功能
-- **优化算法**：智能的板材切割优化算法
-- **API 接口**：完整的 RESTful API 服务
-- **数据管理**：项目数据的增删改查
-- **实时同步**：与 Supabase 数据库的实时同步
+## API 说明
 
-## 🧮 排版切割算法与流程
+### `POST /optimize`（同步，当前前端使用）
 
-后端的排版切割引擎是本系统的核心，基于 Python 和 `rectpack` 库进行深度定制与增强，主要包含以下优化流程与算法原理：
+请求体（节选，完整模型见 `api.py` 中 `CuttingRequest`）：
 
-### 1. 数据预处理与参数计算
-- **考虑锯片物理损耗**：解析前端传入的板材、零件（订单）及余料库存数据。根据用户设定的**锯片厚度 (Saw Blade)**，在测算阶段为每块待排放的零件自动加上锯片缝隙余量，以符合真实的物理切割占位尺寸。
-- **智能寻优排序**：系统通过评估不同规格零件的“组合潜力”与“适配难度”，自动测算**互补尺寸**组合（如发现哪些不同尺寸的零件可结合完美打满行与列）。随后通过轮询 (Round Robin)、贪心 (Greedy) 和平衡 (Balanced) 等策略验证评出最佳的放置序列队列。
-
-### 2. 核心排版引擎 (PlateOptimizer)
-- **多向评估与自适应摆放**：不仅依托了基础布局算法体系，更增加自动感知是否应**旋转 (Rotation)** 的功能。对零件落脚点周围空间作双向适应性探测，取能获取较大空间留存的方向。
-- **行式定制布局法**：对于前置过滤出的互补组合直接激活特定的“行向式排布 (Row-Based)”，强制这些板件对齐拼列，大幅提升原板整体利用率并使最终走刀线更为规整简洁。
-
-### 3. 边角余料极小化填充 (StockOptimizer)
-针对在完成常规订单零件排版后剩余的大量缝隙与边角区域，算法进一步执行库存填缝逻辑优化，引入两种定制的填空引擎：
-- 基于 **MaxRects BAF (Best Area Fit)** 策略：维护并动态裁切大板上的矩形空隙最大边界，落刀选择带来最小总废除空间（最严丝合缝）的落脚点。
-- 基于 **Guillotine BSSF + LLAS** 策略：即一刀切特制版策略。系统采纳最优短边适应法，结合长轴剩余极长分裂法则（Long Leftover Axis Split）——确保排完以后剩下的是长长的一根整条而非几个方块碎片，既便于后期余料建库利用也方便锯片一刀通切。并提供长宽周长面积的交叉排列顺序检测来获取极致填充率。
-
-### 4. 数据后处理与指标统计
-- **尺寸回缩归真**：方案落实后，所有的排版坐标将剥除最初加入的“锯片厚度缓冲值”，提取为纯木板长宽 `(width, height)` 及纯净标定起点 `(x1, y1)` 还原发回前端交互渲染。
-- **精算指标下发**：汇总利用总耗原大板片数、超高精度利用率 (Utilization rate%) 以及最终未落地失败（如果板不够放）的订单名单，全景交付出高质量下料单。
-
-## 📊 数据模型
-
-### 项目 (Projects)
-```typescript
-interface Project {
-  id: number;
-  name: string;
-  details: string;
-  description: string;
-  saw_blade: number;
-  plates: Plate[];
-  orders: Order[];
-  others: Other[];
-  cutted: CuttingPlan[];
-  created_at: string;
-  updated_at: string;
-}
-```
-
-### 切割方案 (CuttingPlan)
-```typescript
-interface CuttingPlan {
-  rate: number;           // 利用率
-  plate: [number, number]; // 板材尺寸
-  cutted: CuttedItem[];   // 切割记录
-}
-```
-
-## 🔌 API 接口
-
-### 优化切割
-```http
-POST /optimize
-Content-Type: application/json
-
+```json
 {
-  "plates": [...],
-  "orders": [...],
-  "others": [...],
+  "uid": "string",
+  "project_id": "string",
+  "plates": [{ "length": 2440, "width": 1220, "quantity": 1 }],
+  "orders": [{ "id": "o1", "length": 500, "width": 300, "quantity": 2 }],
+  "others": [],
   "optimization": true,
-  "saw_blade": 4
+  "saw_blade": 4,
+  "multistart_runs": 1,
+  "multistart_seed": null
 }
 ```
 
-### 响应格式
+- **`multistart_runs`**：多起点次数（上限由 `MULTISTART_MAX_RUNS` 约束），`1` 即单次。
+- 计算在进程池中执行，避免阻塞事件循环；响应仍为完整 **`CuttingResponse`**（`code`、`cutting_plans`、`total_utilization` 等）。
+
+成功示例：
+
 ```json
 {
   "code": 0,
-  "message": "success",
-  "cutting_plans": [...],
-  "total_utilization": 85.5,
-  "pieces_placed": 120,
-  "plates_used": 5
+  "message": "Success",
+  "cutting_plans": [],
+  "total_utilization": 0.85,
+  "pieces_placed": 10,
+  "plates_used": 2
 }
 ```
 
-## ⚙️ 配置说明
+### `POST /optimize/async` + `GET /optimize/jobs/{job_id}`（异步）
 
-### 后端配置 (`backend/config.py`)
-- **服务器配置**：HOST, PORT, DEBUG 等
-- **CORS 配置**：跨域请求设置
-- **数据库配置**：Supabase 连接信息
-- **优化参数**：默认的切割参数
+- 提交后立即返回 **`job_id`**；客户端轮询任务状态，`completed` 时 **`result`** 为与同步接口相同的 `CuttingResponse` 结构。
+- 校验失败可能返回 **HTTP 400**（与同步路径「200 + 非零 code」不同）。
+- 任务数量有上限（`OPTIMIZE_JOB_MAX_STORED`），过期任务查询会 404。
 
-### 前端配置 (`frontend/src/config/`)
-- **API 配置**：后端服务地址
-- **Supabase 配置**：数据库连接信息
+前端若迁移异步模式，需在 `api.ts` 增加路径并实现轮询；保持 `POST /optimize` 则无需改动。
 
-## 🐛 故障排除
+## 后端配置摘要（`config.py` / 环境变量）
 
-### 常见问题
-1. **前端无法启动**：检查 Node.js 版本和依赖安装
-2. **后端连接失败**：检查 Python 环境和依赖
-3. **数据库连接错误**：验证 Supabase 配置信息
-4. **优化算法异常**：检查输入数据的有效性
+| 类别 | 变量示例 | 说明 |
+|------|-----------|------|
+| 服务 | `HOST`、`PORT`、`RELOAD`、`LOG_LEVEL` | 开发与日志 |
+| 限流 | `LIMIT_RATE`、`LIMIT_CONCURRENCY` | API 与并发优化槽位 |
+| 多起点 | `MULTISTART_MAX_RUNS` | 请求体 `multistart_runs` 上限 |
+| 异步任务 | `OPTIMIZE_JOB_MAX_STORED` | 内存中保留的任务条数 |
+| 算法开关 | `CUTTING_ALGORITHMS_ENABLED`、`STOCK_ALGORITHMS_ENABLED` | 逗号分隔 ID |
+| OR-Tools | `ORTOOLS_*` | 时间限制、件数上限、内层 rectpack ID |
+| 调试 | `CUTTING_TRACE_LOG_STAGES`、`CUTTING_DEBUG_DUMP_DIR` | 阶段日志与 JSON dump |
 
-### 调试与日志
+## 测试
 
-```bash
-# 前端开发（热更新）
-cd frontend && npm run dev
-
-# 后端开发：`run.py` 使用 `config.py` 中的设置；热重载由环境变量 `RELOAD` 控制（默认 true）
-cd backend && python run.py
-```
-
-如需更详细的 uvicorn 日志，可在 `backend/.env.local` 中设置 `LOG_LEVEL=debug`（参见 `backend/config.py`）。
-
-## 📝 开发说明
-
-### 代码规范
-- 使用 TypeScript 进行类型检查
-- 遵循 ESLint 代码规范
-- 使用 Prettier 进行代码格式化
-
-### 测试
 ```bash
 cd backend
-pytest
+PYTHONPATH=. pytest
+PYTHONPATH=. pytest tests/test_api.py -q
 ```
 
-## 🤝 贡献指南
+## 数据与约束
 
-1. Fork 项目
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
+- 板材、订单：**长、宽、数量为正整数**；锯片厚度 **> 0**（可为小数）；板材与零件尺寸需 **大于锯片厚度**。
+- 项目持久化字段与前端类型以 Supabase 表及 `project/[id]/page.tsx` 为准。
 
-## 📄 许可证
+## 故障排除
 
-以仓库内声明为准（若未包含 LICENSE 文件，请联系维护者）。
+| 现象 | 建议 |
+|------|------|
+| 前端连不上 API | 检查 `NEXT_PUBLIC_API_URL` 与后端是否监听 8000 |
+| 优化超时 | 调大 `TIMEOUT`、或减少 `multistart_runs`；大任务可考虑异步接口 |
+| ortools 相关错误 | 确认 `pip install -r requirements.txt` 含 `ortools` |
+| 限流 429 | 调整 `LIMIT_RATE` 或请求频率 |
 
-## 📞 联系方式
+## 贡献与许可
 
-如有问题或建议，请通过以下方式联系：
-- 提交 Issue
-- 发送邮件至：[your-email@example.com]
+欢迎 Issue / PR。许可证以仓库内 **LICENSE** 为准（若未提供，请联系维护者）。
 
 ---
 
-**注意**：板材与零件的长度、宽度、数量需为正整数，锯片宽度需为大于零的数值（支持小数），且板材及零件尺寸必须大于锯片宽度。
+**文档维护**：若目录或接口有变更，请同步更新本 README 与根目录 **`CLAUDE.md`**（面向 AI/开发者的更细命令与约定）。

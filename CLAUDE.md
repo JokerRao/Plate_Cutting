@@ -30,11 +30,13 @@ python run.py           # Start server (http://localhost:8000)
 ### Testing
 ```bash
 cd backend
-pytest                  # Run all tests
+pytest                  # Run all tests (located in backend/tests/)
 pytest tests/test_api.py  # Run specific test file
 pytest -v               # Verbose output
 pytest --cov            # Run with coverage report
 ```
+
+There are also various standalone experiment/analysis scripts that have been collected in `scripts/test_scripts/` which can be executed from the root directory via `python scripts/test_scripts/script_name.py`.
 
 ## Architecture
 
@@ -42,18 +44,17 @@ pytest --cov            # Run with coverage report
 
 The backend follows a modular FastAPI architecture:
 
-- **api.py**: Main FastAPI application setup, middleware configuration (CORS, rate limiting, compression), and API endpoint definitions
-- **main.py**: Core optimization algorithm using rectpack library for 2D bin packing. Contains:
-  - `CuttingConfig`, `SmallPlate`, `Cut` dataclasses
-  - `Rectangle` class for geometric operations
-  - `optimize_cutting()` function - main entry point for optimization
-- **config.py**: Centralized configuration using Pydantic Settings, loads from `.env.local`
-- **run.py**: Uvicorn server launcher with production-ready settings
-- **app/**: Modular application structure (currently being migrated to)
-  - `api/routes/`: API route handlers (health, optimization)
-  - `core/`: Core utilities (constants, validation)
-  - `models/`: Pydantic schemas
-  - `services/`: Business logic (optimization service)
+- **`api.py`**: Main FastAPI application setup, middleware configuration (CORS, rate limiting, compression), and API endpoint definitions.
+- **`config.py`**: Centralized configuration using Pydantic Settings, loads from `.env.local`.
+- **`run.py`**: Uvicorn server launcher with production-ready settings.
+- **`core/`**: Core utilities, data models, and metrics (`models.py`, `utils.py`, `metrics/`).
+- **`services/`**: Business logic. `cutting_service.py` is the main entry point (`optimize_cutting()`) that orchestrates multiple algorithms.
+- **`engine/`**: Cutting algorithms and optimization logic.
+  - `optimizers.py`: Core logic for packing items into bins (`PlateOptimizer`, `StockOptimizer`).
+  - `pipeline/`: Steps for the packing process (`normalize`, `sequential`, `refine`, `consolidate`, `cut_simplifier`, `output`).
+  - `cutting_algorithms/`: Registry for different packing strategies (`rectpack`, `ortools`).
+- **`tests/`**: Pytest test cases.
+- **`scripts/test_scripts/`**: A collection of standalone ad-hoc test and analysis scripts (e.g., `test.py`, `analyze_expert.py`).
 
 ### Frontend Structure
 
@@ -116,11 +117,21 @@ Backend server settings in `config.py`:
    - `saw_blade`: Blade thickness for cutting gaps
    - `optimization`: Mode (0=normal, 1=optimized)
 3. **Optimization**: Backend runs 2D bin packing algorithm
-4. **Response**: Returns cutting plans with:
+4. **Layout Consolidation** (post-processing): After selecting the best solution, the engine
+   groups identical board layouts (same piece composition = same CNC program) and attempts
+   to consolidate "singleton" layouts (layouts used only once) by repacking their pieces.
+   Accepted only if distinct layout types or total board count strictly decreases.
+   Runs up to 3 passes. Implemented in `engine/pipeline/consolidate.py`.
+5. **Cut Simplifier** (post-processing): After consolidation, repacks order pieces on each
+   layout type into row-aligned guillotine rows to reduce internal cut-line count (unique
+   interior horizontal + vertical lines from order pieces only). Accepted per layout group
+   only if every board in the group strictly improves; then re-finalizes stock fill.
+   See `engine/pipeline/cut_simplifier.py`.
+6. **Response**: Returns cutting plans with:
    - Layout coordinates for each piece
    - Utilization rates per plate
    - Total statistics (pieces placed, plates used)
-5. **Visualization**: Frontend renders cutting layouts with SVG
+7. **Visualization**: Frontend renders cutting layouts with SVG
 
 ## Important Constraints
 
@@ -148,11 +159,9 @@ Backend server settings in `config.py`:
 
 ### Modifying Optimization Algorithm
 
-The core algorithm is in `backend/main.py`:
-- `optimize_cutting()`: Main function that orchestrates the optimization
-- Uses `rectpack.newPacker()` for bin packing
-- Handles rotation, sorting, and placement strategies
-- Returns structured cutting plans with coordinates
+The core algorithm is orchestrated in `backend/services/cutting_service.py`:
+- `optimize_cutting()`: Main function that runs the algorithm pipeline
+- `backend/engine/`: Directory containing all actual packing logic, patterns (e.g., band-fill, common dimension), constraint logic, and metrics calculation.
 
 ### Frontend Data Management
 

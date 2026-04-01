@@ -12,6 +12,8 @@ logger = logging.getLogger('plate_cutting')
 class CuttingConfig:
     """切割配置参数"""
     blade_thickness: float = 4.0  # 锯片厚度
+    # 检测到等高互补对时是否走行式 pack_orders_row_based；False 时一律用 rectpack 试探
+    enable_row_complementary: bool = True
 
 
 @dataclass

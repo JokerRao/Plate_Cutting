@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabaseClient';
 import ProjectLayoutNavPills, { ProjectListNavButton } from '@/components/ProjectLayoutNavPills';
-import { groupCutPlansInOrder, getGroupAccent } from '@/utils/cutPlanGroup';
+import { groupCutPlansInOrder, getGroupAccent, formatIndices } from '@/utils/cutPlanGroup';
 
 // 添加一个新的函数来获取总体统计信息
 const getTotalSummary = (allPages: any[]) => {
@@ -76,8 +76,10 @@ export default function LayoutStatsPage() {
       if (data) {
         setProjectName(data.name || '');
         if (data.cutted && data.cutted.length > 0) {
-          const metadata = data.cutted[data.cutted.length - 1]?.metadata || {};
-          const cuttingPlans = data.cutted.slice(0, -1);
+          const lastItem = data.cutted[data.cutted.length - 1];
+          const hasMetadata = lastItem?.metadata != null;
+          const metadata = hasMetadata ? (lastItem.metadata || {}) : {};
+          const cuttingPlans = hasMetadata ? data.cutted.slice(0, -1) : data.cutted;
           setCutted(cuttingPlans);
           const clientMap: { [key: string]: string } = {};
           (metadata.others || []).forEach((item: any) => {
@@ -254,7 +256,6 @@ export default function LayoutStatsPage() {
             const item = g.representative;
             const multi = g.indices.length > 1;
             const first = g.indices[0] + 1;
-            const last = g.indices[g.indices.length - 1] + 1;
             const ac = getGroupAccent(gi);
             const detailLine = multi ? `text-xs ${ac.text} opacity-90` : 'text-xs text-ink-muted';
 
@@ -270,7 +271,7 @@ export default function LayoutStatsPage() {
               >
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <h3 className={`text-sm font-semibold ${multi ? ac.text : 'text-ink'}`}>
-                    {multi ? `第 ${first}–${last} 张（${g.indices.length} 张同切法）` : `第 ${first} 页`}
+                    {multi ? `第 ${formatIndices(g.indices)} 张（${g.indices.length} 张同切法）` : `第 ${first} 页`}
                   </h3>
                   <button
                     type="button"

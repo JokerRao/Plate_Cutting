@@ -18,7 +18,9 @@ class Settings(BaseSettings):
     
     # CORS Configuration
     CORS_ORIGINS: list[str] = [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "*"
     ]  # 默认值，可通过环境变量 CORS_ORIGINS 覆盖
     CORS_ALLOW_CREDENTIALS: bool = True  # 默认值，可通过环境变量 CORS_ALLOW_CREDENTIALS 覆盖
     CORS_ALLOW_METHODS: list[str] = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]  # 默认值，可通过环境变量 CORS_ALLOW_METHODS 覆盖
@@ -51,6 +53,34 @@ class Settings(BaseSettings):
     DEFAULT_ATTACHMENT: int = 100  # 默认值，可通过环境变量 DEFAULT_ATTACHMENT 覆盖
     DEFAULT_RATIO: float = 0.4  # 默认值，可通过环境变量 DEFAULT_RATIO 覆盖
     DEFAULT_SHOW_AREA: int = 120000  # 默认值，可通过环境变量 DEFAULT_SHOW_AREA 覆盖
+
+    # 优化：多起点次数上限（请求体可小于等于此值）
+    MULTISTART_MAX_RUNS: int = 32
+    # 异步任务最多保留条数（超出则删除最旧）
+    OPTIMIZE_JOB_MAX_STORED: int = 500
+
+    # auto 模式启用的主装箱算法 id，逗号分隔；空串表示使用代码内默认集合
+    # 例: GuillotineBafMinas,MaxRectsBaf,SkylineMwfWm
+    CUTTING_ALGORITHMS_ENABLED: str = ""
+    # 允许的库存填充策略 id，逗号分隔；空串表示不限制
+    # 合法值: maxrects_baf, guillotine_bssf_llas
+    STOCK_ALGORITHMS_ENABLED: str = ""
+
+    # OR-Tools：方案 A（面积分板 + rectpack）CP-SAT 时间上限（秒）
+    ORTOOLS_ASSIGN_TIME_LIMIT_SEC: float = 5.0
+    # 件数超过此值时跳过面积分板，直接顺序 rectpack（避免变量爆炸）
+    ORTOOLS_ASSIGN_MAX_ITEMS: int = 400
+    # 方案 A 落地时每张板使用的 rectpack 算法 id（须为 PACKING_ALGORITHM_CLASSES 的键）
+    ORTOOLS_ASSIGN_INNER_PACKING_ID: str = "MaxRectsBaf"
+
+    # OR-Tools：方案 B（单张板 2D CP）时间上限；单张板订单件数超过则回退 rectpack
+    ORTOOLS_CP2D_TIME_LIMIT_SEC: float = 10.0
+    ORTOOLS_MAX_PIECES_CP2D: int = 40
+
+    # 可观测性：为 True 时按阶段打结构化 cutting_trace 日志（便于排查）
+    CUTTING_TRACE_LOG_STAGES: bool = False
+    # 非空时向该目录写入 JSON 片段（每阶段可选 dump，仅建议开发环境）
+    CUTTING_DEBUG_DUMP_DIR: str = ""
 
 @lru_cache()
 def get_settings() -> Settings:
