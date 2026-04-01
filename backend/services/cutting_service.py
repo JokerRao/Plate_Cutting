@@ -149,7 +149,6 @@ def _run_rectpack_sequential_from_prepared(
         converter,
         trace,
     )
-from engine.pipeline.cut_simplifier import simplify_board_cuts
 from engine.pipeline.row_sort_pass import apply_row_sort_pass
 def _run_single_algorithm(
     converter: Any,
@@ -386,18 +385,6 @@ def _run_row_sort_pass(
     return sorted_results if sorted_results is not None else results
 
 
-def _run_post_pack_stock_pass(
-    results: List[Dict[str, Any]],
-    plate_templates: List[SmallPlate],
-    config: CuttingConfig,
-    converter: DataConverter,
-    optim: int,
-    stock_effective: str,
-    stock_plates: List[SmallPlate],
-) -> List[Dict[str, Any]]:
-    # Previously in cutting_service.py there wasn't a separate function for this, but I referenced it. Let's see if it existed.
-    pass
-
 def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
                      others: List[Dict[str, Any]] = None, optim: int = 0,
                      saw_blade: float = 4.0, algorithm: str = "auto",
@@ -597,7 +584,11 @@ def optimize_cutting_multistart(
         )
         if not plans:
             continue
-        m = calculate_cutting_metrics(plans, 0)
+        total_requested = sum(int(o.get('quantity', 0)) for o in od)
+        total_placed = sum(
+            1 for r in plans for c in r['cutted'] if not c[4]
+        )
+        m = calculate_cutting_metrics(plans, max(0, total_requested - total_placed))
         if best_metrics is None or compare_algorithms(m, best_metrics) < 0:
             best_metrics = m
             best_plans = deepcopy(plans)

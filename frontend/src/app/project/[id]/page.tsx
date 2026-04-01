@@ -9,6 +9,7 @@ import GalleryToast from '@/components/GalleryToast';
 import ProjectLayoutNavPills, { ProjectListNavButton } from '@/components/ProjectLayoutNavPills';
 import { useAppDialog } from '@/components/AppDialog';
 import { getApiUrl, API_CONFIG } from '@/config/api';
+import { invalidateLayoutCache } from '@/app/layout/[id]/[page]/page';
 
 /** 用于脏检查：对每个对象的键排序后再序列化，避免 JSON.stringify 键序不一致导致误判「有未保存更改」 */
 function stableStringifyForDirtyCheck(value: unknown): string {
@@ -384,10 +385,12 @@ export default function ProjectDetailPage() {
             details: projectDetails,
             description: projectDescription,
             saw_blade: sawBlade,
-            plates: JSON.stringify(plates),
-            orders: JSON.stringify(orders),
-            others: JSON.stringify(others),
+            plates: stableStringifyForDirtyCheck(plates),
+            orders: stableStringifyForDirtyCheck(orders),
+            others: stableStringifyForDirtyCheck(others),
           });
+
+          invalidateLayoutCache(projectId);
 
           if (includeNavigation) {
             await dialogAlert('板件、零件和其他尺寸信息已保存', '保存成功');

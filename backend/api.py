@@ -67,7 +67,7 @@ def create_app(settings: Settings):
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_origin_regex="^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:[0-9]+)?$",
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:[0-9]+)?$",
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],  # 使用通配符允许所有头
@@ -390,11 +390,8 @@ async def optimize_plates(
         CuttingResponse object with optimized cutting plans and statistics
     """
     try:
-        print("FRONTEND PAYLOAD:", cutting_request.model_dump(), flush=True)
-        import sys
-        sys.stdout.flush()
         logger.info("Received cutting optimization request")
-        logger.info(f"Frontend payload: {cutting_request.model_dump()}")
+        logger.debug("Frontend payload: %s", cutting_request.model_dump())
 
         # Convert request models to dictionaries
         plates_dict = [plate.model_dump() for plate in cutting_request.plates]
@@ -463,10 +460,10 @@ async def optimize_plates(
         return response
 
     except Exception as e:
-        logger.error(f"Error during optimization: {str(e)}")
+        logger.error(f"Error during optimization: {str(e)}", exc_info=True)
         return CuttingResponse(
             code=5000,
-            message=f"{ERROR_CODES[5000]}: {str(e)}",
+            message=ERROR_CODES[5000],
             cutting_plans=[],
             total_utilization=0,
             pieces_placed=0,
@@ -486,8 +483,7 @@ async def optimize_async_submit(
     """
     提交异步优化任务，立即返回 job_id；通过 GET /optimize/jobs/{job_id} 轮询结果。
     """
-    print("FRONTEND ASYNC PAYLOAD:", cutting_request.model_dump(), flush=True)
-    import sys; sys.stdout.flush()
+    logger.debug("Async payload: %s", cutting_request.model_dump())
     plates_dict = [plate.model_dump() for plate in cutting_request.plates]
     orders_dict = [order.model_dump() for order in cutting_request.orders]
     others_dict = [

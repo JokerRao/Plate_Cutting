@@ -21,6 +21,15 @@ type ProjectCache = {
 };
 const _projectCache = new Map<string, ProjectCache>();
 
+/** 清除指定项目的布局缓存（切板后调用以保证数据新鲜） */
+export function invalidateLayoutCache(projectId?: string) {
+  if (projectId) {
+    _projectCache.delete(projectId);
+  } else {
+    _projectCache.clear();
+  }
+}
+
 const DIM_LINE = '#94a3b8';
 const DIM_TEXT = '#0f172a';
 const PLATE_STROKE = 'rgba(15,23,42,0.55)';
@@ -368,19 +377,45 @@ export default function LayoutPage() {
 
   // 由于使用了 history.pushState 脱离了 Next.js router，我们需用局部 state 取代 useParams
   const [currentPageNum, setCurrentPageNum] = useState(pageNum);
+  const notificationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 当外部真实路由变更（如前进后退）或首次挂载时同步
   useEffect(() => {
     setCurrentPageNum(pageNum);
   }, [pageNum]);
 
+  // 监听浏览器前进/后退事件，同步 currentPageNum 与 layoutData
+  useEffect(() => {
+    const onPopState = () => {
+      const match = window.location.pathname.match(/\/layout\/[^/]+\/(\d+)$/);
+      if (!match) return;
+      const urlPage = parseInt(match[1], 10);
+      if (Number.isNaN(urlPage) || urlPage < 1) return;
+      setCurrentPageNum(urlPage);
+      const entry = _projectCache.get(projectId);
+      if (entry && entry.cuttingPlans[urlPage - 1]) {
+        setLayoutData(entry.cuttingPlans[urlPage - 1]);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [projectId]);
+
   // 显示通知的函数
   const showNotification = (message: string) => {
+    if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current);
     setNotification({ message, type: 'warning' });
-    setTimeout(() => {
+    notificationTimerRef.current = setTimeout(() => {
       setNotification(null);
+      notificationTimerRef.current = null;
     }, 5000);
   };
+
+  useEffect(() => {
+    return () => {
+      if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current);
+    };
+  }, []);
 
   // 处理页面切换（只改 URL，不改任何 state；data 从模块级缓存立即读取，无需等待网络）
   const handlePageChange = (newPageNum: number) => {
@@ -724,12 +759,12 @@ export default function LayoutPage() {
               <ProjectLayoutNavPills
                 projectId={projectId}
                 active="layout-detail"
-                layoutPageNum={pageNum}
+                layoutPageNum={currentPageNum}
                 className="mb-0"
                 size="toolbar"
                 show={{
                   projectList: false,
-                  ...(pageNum === 1 ? { homeLayout: false } : {}),
+                  ...(currentPageNum === 1 ? { homeLayout: false } : {}),
                 }}
                 suppressPillCurrentLabel
               />
