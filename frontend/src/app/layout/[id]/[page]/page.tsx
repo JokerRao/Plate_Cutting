@@ -12,6 +12,15 @@ import ProjectLayoutNavPills, {
 } from '@/components/ProjectLayoutNavPills';
 import { groupCutPlansInOrder, getGroupAccent } from '@/utils/cutPlanGroup';
 
+/** 模块级缓存：同一 projectId 翻页时无需重新请求 Supabase */
+type ProjectCache = {
+  name: string;
+  cuttingPlans: any[];
+  orders: any[];
+  others: any[];
+};
+const _projectCache = new Map<string, ProjectCache>();
+
 const DIM_LINE = '#94a3b8';
 const DIM_TEXT = '#0f172a';
 const PLATE_STROKE = 'rgba(15,23,42,0.55)';
@@ -354,89 +363,111 @@ export default function LayoutPage() {
   const [others, setOthers] = useState<any[]>([]);
   const [totalPages, setTotalPages] = useState(0);
   const [allCutted, setAllCutted] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);  // 添加加载状态
-  const [isTransitioning, setIsTransitioning] = useState(false);  // 添加过渡状态
+  const [isLoading, setIsLoading] = useState(false);
   const cutGroups = useMemo(() => groupCutPlansInOrder(allCutted), [allCutted]);
+
+  // 由于使用了 history.pushState 脱离了 Next.js router，我们需用局部 state 取代 useParams
+  const [currentPageNum, setCurrentPageNum] = useState(pageNum);
+
+  // 当外部真实路由变更（如前进后退）或首次挂载时同步
+  useEffect(() => {
+    setCurrentPageNum(pageNum);
+  }, [pageNum]);
 
   // 显示通知的函数
   const showNotification = (message: string) => {
     setNotification({ message, type: 'warning' });
     setTimeout(() => {
       setNotification(null);
-    }, 5000); // 5秒后消失
+    }, 5000);
   };
 
-  // 预加载下一页数据
-  const preloadNextPage = async (nextPageNum: number) => {
-    if (nextPageNum > 0 && nextPageNum <= totalPages) {
-      const nextPageData = allCutted[nextPageNum - 1];
-      if (nextPageData) {
-        setLayoutData(nextPageData);
-      }
-    }
-  };
-
-  // 处理页面切换
-  const handlePageChange = async (newPageNum: number) => {
-    if (newPageNum < 1 || newPageNum > totalPages || newPageNum === pageNum) return;
+  // 处理页面切换（只改 URL，不改任何 state；data 从模块级缓存立即读取，无需等待网络）
+  const handlePageChange = (newPageNum: number) => {
+    if (newPageNum < 1 || newPageNum > totalPages || newPageNum === currentPageNum) return;
     
-    setIsTransitioning(true);
-    setIsLoading(true);
+    // 记录当前的滚动位置
+    const top = window.scrollY || document.documentElement.scrollTop;
     
-    try {
-      // 预加载下一页数据
-      await preloadNextPage(newPageNum);
+    // 我们使用了基于前端缓存的渲染。通过 pushState 更新 URL 以改变浏览历史记录，
+    // 这避开了 Next.js router.push 可能带来的不可控滚动跳顶（即便传了 scroll: false 有时依然会抖动）。
+    window.history.pushState(null, '', `/layout/${projectId}/${newPageNum}`);
+    
+    // 虽然通过 pushState 改变了 URL，但 App Router 获取 URL 参数不会更新。
+    // 因为这只影响当前页的展示，我们通过缓存主动重置 state 来渲染对应页的数据
+    const entry = _projectCache.get(projectId);
+    if (entry) {
+      setCurrentPageNum(newPageNum);
+      setLayoutData(entry.cuttingPlans[newPageNum - 1] ?? null);
       
-      // 使用 router.push 进行页面切换
-      router.push(`/layout/${projectId}/${newPageNum}`);
-    } catch (error) {
-      console.error('Error changing page:', error);
-      showNotification('页面切换失败，请重试');
-    } finally {
-      setIsLoading(false);
-      setIsTransitioning(false);
+      // Canvas 重绘或 React 的 DOM 更新可能会让浏览器强行对焦，这里强锁一次滚动条位置
+      requestAnimationFrame(() => {
+        window.scrollTo(0, top);
+      });
+    } else {
+      // 降级兜底：万一缓存空了，走常规路由
+      router.push(`/layout/${projectId}/${newPageNum}`, { scroll: false });
     }
   };
 
   useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
+    if (!projectId) return;
+
+    const cached = _projectCache.get(projectId);
+
+    const applyData = (entry: ProjectCache) => {
+      setProjectName(entry.name);
+      setOrders(entry.orders);
+      setOthers(entry.others);
+      setTotalPages(entry.cuttingPlans.length);
+      setAllCutted(entry.cuttingPlans);
+      const targetPage = Number.isNaN(pageNum) || pageNum < 1 ? 0 : pageNum - 1;
+      setCurrentPageNum(targetPage + 1);
+      setLayoutData(entry.cuttingPlans[targetPage] ?? null);
+      setIsLoading(false);
+    };
+
+    if (cached) {
+      // 缓存命中：立即显示正确页，无闪烁
+      applyData(cached);
+      return;
+    }
+
+    // 无缓存：走网络请求
+    setIsLoading(true);
+    (async () => {
       try {
         const { data } = await supabase
           .from('Projects')
           .select('name, cutted')
           .eq('id', projectId)
           .single();
-        
+
         if (data) {
-          setProjectName(data.name || '');
-          if (data.cutted && data.cutted.length > 0) {
-            const lastItem = data.cutted[data.cutted.length - 1];
-            const hasMetadata = lastItem?.metadata != null;
-            const metadata = hasMetadata ? (lastItem.metadata || {}) : {};
-            setOrders(metadata.orders || []);
-            setOthers(metadata.others || []);
-            const cuttingPlans = hasMetadata ? data.cutted.slice(0, -1) : data.cutted;
-            setTotalPages(cuttingPlans.length);
-            setAllCutted(cuttingPlans);
-            if (cuttingPlans[pageNum - 1]) {
-              setLayoutData(cuttingPlans[pageNum - 1]);
-            }
-          } else {
-            setTotalPages(0);
-            setAllCutted([]);
-            setLayoutData(null);
-          }
+          const lastItem = data.cutted?.[data.cutted.length - 1];
+          const hasMetadata = lastItem?.metadata != null;
+          const metadata = hasMetadata ? (lastItem.metadata || {}) : {};
+          const cuttingPlans: any[] = hasMetadata ? data.cutted.slice(0, -1) : (data.cutted ?? []);
+          const entry: ProjectCache = {
+            name: data.name || '',
+            cuttingPlans,
+            orders: metadata.orders || [],
+            others: metadata.others || [],
+          };
+          _projectCache.set(projectId, entry);
+          applyData(entry);
+        } else {
+          setTotalPages(0);
+          setAllCutted([]);
+          setLayoutData(null);
+          setIsLoading(false);
         }
       } catch (error) {
         console.error('Error fetching data:', error);
         showNotification('数据加载失败，请刷新页面重试');
-      } finally {
         setIsLoading(false);
       }
-    };
-    
-    if (projectId) fetchData();
+    })();
   }, [projectId, pageNum]);
 
   useEffect(() => {
@@ -673,7 +704,7 @@ export default function LayoutPage() {
     return (
       <div className="page-gallery layout-detail-page">
         <div className="page-gallery-inner page-gallery-inner--layout-detail">
-          <div className="mb-4 space-y-3 border-b border-hairline pb-3">
+          <div className="pt-3 space-y-4 border-b border-hairline pb-3 mb-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h1 className="flex min-w-0 items-center gap-2 text-xl font-semibold tracking-tight text-ink">
                 <span className="truncate">{projectName || '未命名项目'}</span>
@@ -767,7 +798,7 @@ export default function LayoutPage() {
       )}
 
       {/* ① 左标题 | 右：当前页 + 项目列表 ② 左：使用率+页码 | 右：上下页 + 四联导航 */}
-      <div className="mb-4 space-y-3 border-b border-hairline pb-3 animate-fade-in-up">
+      <div className="pt-3 space-y-6 border-b border-hairline pb-3 mb-4 animate-fade-in-up">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="flex min-w-0 items-center gap-2 text-xl font-semibold tracking-tight text-ink sm:gap-3 sm:text-2xl">
             <svg className="h-5 w-5 shrink-0 text-accent sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
@@ -780,13 +811,13 @@ export default function LayoutPage() {
               className="inline-flex h-8 items-center rounded-md border border-hairline bg-muted/40 px-2.5 text-xs font-medium text-ink-muted"
               title="当前所在界面"
             >
-              {pageNum === 1 ? '首页排版' : `第 ${pageNum} 张排版`}
+              {currentPageNum === 1 ? '首页排版' : `第 ${currentPageNum} 张排版`}
               <span className="ml-1.5 rounded bg-surface/90 px-1.5 py-0.5 text-[10px] font-semibold text-ink">当前</span>
             </span>
             <ProjectListNavButton size="toolbar" />
           </div>
         </div>
-        <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-2 mt-4">
           <div className="flex flex-wrap items-center gap-2">
             {layoutData ? (
               <span
@@ -800,7 +831,7 @@ export default function LayoutPage() {
               className="inline-flex h-8 items-center rounded-md border border-hairline bg-surface px-2.5 text-xs font-medium tabular-nums text-ink"
               title="当前张数 / 总张数"
             >
-              第 {pageNum} / {totalPages} 张
+              第 {currentPageNum} / {totalPages} 张
             </span>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -809,27 +840,20 @@ export default function LayoutPage() {
               title="上一页"
               aria-label="上一页"
               className="btn-gallery-primary inline-flex h-8 min-w-9 shrink-0 items-center justify-center gap-1.5 px-2.5 text-xs shadow-sm"
-              onClick={() => handlePageChange(pageNum - 1)}
-              disabled={pageNum <= 1 || isTransitioning}
+              onClick={() => handlePageChange(currentPageNum - 1)}
+              disabled={currentPageNum <= 1}
             >
-              {isTransitioning ? (
-                <svg className="h-3.5 w-3.5 animate-spin text-white" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              ) : (
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
-              )}
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
             </button>
             <button
               type="button"
               title="下一页"
               aria-label="下一页"
               className="btn-gallery-primary inline-flex h-8 min-w-9 shrink-0 items-center justify-center gap-1.5 px-2.5 text-xs shadow-sm"
-              onClick={() => handlePageChange(pageNum + 1)}
-              disabled={pageNum >= totalPages || isTransitioning}
+              onClick={() => handlePageChange(currentPageNum + 1)}
+              disabled={currentPageNum >= totalPages}
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -839,12 +863,12 @@ export default function LayoutPage() {
             <ProjectLayoutNavPills
               projectId={projectId}
               active="layout-detail"
-              layoutPageNum={pageNum}
+              layoutPageNum={currentPageNum}
               className="mb-0"
               size="toolbar"
               show={{
                 projectList: false,
-                ...(pageNum === 1 ? { homeLayout: false } : {}),
+                ...(currentPageNum === 1 ? { homeLayout: false } : {}),
               }}
               suppressPillCurrentLabel
             />
@@ -865,7 +889,7 @@ export default function LayoutPage() {
       >
         <canvas
           ref={canvasRef}
-          className={`block h-auto w-full max-w-full bg-transparent ${isTransitioning ? 'opacity-50' : ''} ${layoutHover ? 'cursor-help' : 'cursor-default'}`}
+          className={`block h-auto w-full max-w-full bg-transparent ${layoutHover ? 'cursor-help' : 'cursor-default'}`}
           aria-label="切板排版图"
           onMouseMove={handleCanvasMouseMove}
           onMouseLeave={handleCanvasLeave}
@@ -904,7 +928,7 @@ export default function LayoutPage() {
               const [L, W] = page.plate || [0, 0];
               const r = page.rate != null ? (page.rate * 100).toFixed(1) : '—';
               const multi = g.indices.length > 1;
-              const active = g.indices.includes(pageNum - 1);
+              const active = g.indices.includes(currentPageNum - 1);
               const ac = getGroupAccent(gi);
 
               const pages1 = g.indices.map((i) => i + 1).sort((a, b) => a - b);
@@ -931,7 +955,6 @@ export default function LayoutPage() {
                 <button
                   key={g.signature}
                   type="button"
-                  disabled={isTransitioning}
                   title={multi ? `同切排版，进入该组第 ${pages1[0]} 张` : undefined}
                   onClick={() => void handlePageChange(pages1[0])}
                   className={`rounded-full px-3 py-1.5 text-xs font-medium tabular-nums transition-all ${

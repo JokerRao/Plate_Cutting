@@ -100,7 +100,7 @@ export default function LayoutStatsPage() {
     <div className="page-gallery">
       <div className="page-gallery-inner">
       {/* ① 左标题 | 右：当前 + 项目列表 ② 左：共 N 张 | 右：四联导航 */}
-      <div className="mb-6 space-y-3 border-b border-hairline pb-4 animate-fade-in-up">
+      <div className="pt-3 space-y-6 border-b border-hairline pb-4 mb-6 animate-fade-in-up">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <h1 className="flex min-w-0 flex-1 items-center gap-2 text-xl font-semibold tracking-tight text-ink sm:gap-3 sm:text-2xl">
             <svg className="h-5 w-5 shrink-0 text-accent sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
@@ -120,7 +120,7 @@ export default function LayoutStatsPage() {
             <ProjectListNavButton size="toolbar" />
           </div>
         </div>
-        <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-2 mt-4">
           <div className="flex flex-wrap items-center gap-2">
             {cutted.length > 0 ? (
               <span

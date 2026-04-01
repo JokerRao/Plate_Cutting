@@ -445,8 +445,9 @@ export default function ProjectPage() {
   return (
     <div className="page-gallery">
       <div className="page-gallery-inner">
+      <div className="pt-3 space-y-6 mb-6">
       {/* 顶部导航区 */}
-      <div className="relative z-30 mb-8 flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-hairline pb-4 animate-fade-in-up">
+      <div className="relative z-30 flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-hairline pb-4 animate-fade-in-up">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
             <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -502,7 +503,7 @@ export default function ProjectPage() {
 
       {/* 工具栏：左筛选 / 右统计+排序，避免挤在一侧 */}
       <div
-        className="relative z-10 mb-4 flex w-full min-w-0 flex-col gap-3 animate-fade-in-up sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+        className="relative z-10 flex w-full min-w-0 flex-col gap-3 mt-4 animate-fade-in-up sm:flex-row sm:items-center sm:justify-between sm:gap-4"
         style={{ animationDelay: '0.05s' }}
       >
         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -562,6 +563,7 @@ export default function ProjectPage() {
             <option value="nameDesc">名称 (Z-A)</option>
           </select>
         </div>
+      </div>
       </div>
 
       {/* 项目列表区：一栏一栏的行列表 */}

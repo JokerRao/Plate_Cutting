@@ -922,7 +922,7 @@ export default function ProjectDetailPage() {
       <GalleryToast message={galleryToast} />
 
       {/* 顶栏：① 左标题 | 右：当前 + 项目列表 + 用户 ② 左优化+切板+保存 | 右导航 */}
-      <div className="mb-5 animate-fade-in-up border-b border-hairline pb-3">
+      <div className="pt-3 space-y-6 mb-6 animate-fade-in-up border-b border-hairline pb-4">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <h1 className="flex min-w-0 items-center gap-2 text-xl font-semibold tracking-tight text-ink sm:gap-3 sm:text-2xl">
             <svg className="h-5 w-5 shrink-0 text-accent sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -960,7 +960,7 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-2 sm:gap-x-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 sm:gap-x-3 mt-4">
           <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
           <div className="mr-0 sm:mr-1" role="radiogroup" aria-label="切板优化模式">
             <div
