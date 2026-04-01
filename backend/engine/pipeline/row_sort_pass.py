@@ -4,7 +4,8 @@ import logging
 from core.models import Cut, CuttingConfig, SmallPlate
 from core.utils import DataConverter
 from engine.optimizers import StockOptimizer
-from engine.pipeline.cut_simplifier import finalize_plate_output, count_cut_lines
+from engine.pipeline.output import finalize_plate_output
+from engine.pipeline.cut_simplifier import count_cut_lines
 
 logger = logging.getLogger("plate_cutting")
 

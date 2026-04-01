@@ -139,17 +139,19 @@ export default function ProjectPage() {
 
       if (bridgeData) {
         const newIds = bridgeData.project_ids.filter((id: number) => id !== projectId);
-        await supabase
+        const { error: bridgeUpdateError } = await supabase
           .from('Bridges')
           .update({ project_ids: newIds, updated_at: new Date().toISOString() })
           .eq('uid', user.id);
+        if (bridgeUpdateError) throw bridgeUpdateError;
       }
 
-      await supabase
+      const { error: deleteError } = await supabase
         .from('Projects')
         .delete()
         .eq('id', projectId)
         .eq('uid', user.id);
+      if (deleteError) throw deleteError;
 
       setExpandedProjects(prev => {
         const next = new Set(prev);
@@ -184,18 +186,20 @@ export default function ProjectPage() {
 
       if (bridgeData) {
         const newIds = bridgeData.project_ids.filter((id: number) => !selectedProjects.has(id));
-        await supabase
+        const { error: bridgeUpdateError } = await supabase
           .from('Bridges')
           .update({ project_ids: newIds, updated_at: new Date().toISOString() })
           .eq('uid', user.id);
+        if (bridgeUpdateError) throw bridgeUpdateError;
       }
 
       const idsToDelete = Array.from(selectedProjects);
-      await supabase
+      const { error: deleteError } = await supabase
         .from('Projects')
         .delete()
         .in('id', idsToDelete)
         .eq('uid', user.id);
+      if (deleteError) throw deleteError;
 
       setExpandedProjects(prev => {
         const next = new Set(prev);

@@ -14,6 +14,7 @@ const getTotalSummary = (allPages: any[]) => {
   };
 
   allPages.forEach(page => {
+    if (!Array.isArray(page?.cutted)) return;
     page.cutted.forEach((piece: any) => {
       const id = piece.id;
       const map = !piece.is_stock ? summary.parts : summary.reusable;
@@ -168,7 +169,7 @@ export default function LayoutStatsPage() {
                 总切件数
               </div>
               <div className="mt-3 text-3xl font-bold text-ink">
-                {cutted.reduce((sum, item) => sum + item.cutted.length, 0)}
+                {cutted.reduce((sum, item) => sum + (Array.isArray(item?.cutted) ? item.cutted.length : 0), 0)}
               </div>
             </div>
             <div className="border-hairline border bg-surface p-6 shadow-sm hover-lift transition-all" style={{ borderRadius: 6 }}>
@@ -177,7 +178,7 @@ export default function LayoutStatsPage() {
                 平均使用率
               </div>
               <div className="mt-3 text-3xl font-bold text-ink">
-                {(cutted.reduce((sum, item) => sum + item.rate, 0) / cutted.length * 100).toFixed(1)}%
+                {(cutted.length > 0 ? (cutted.reduce((sum, item) => sum + (item?.rate ?? 0), 0) / cutted.length * 100) : 0).toFixed(1)}%
               </div>
             </div>
           </div>

@@ -116,57 +116,53 @@ def pack_orders_layer_based(
     w1, h1 = size1_key
     w2, h2 = size2_key
     
-    # 统一提取符合尺寸及旋转要求的零件池
-    pool = []
+    pool1 = []
+    pool2 = []
     for i, order in enumerate(orders):
         wb = order.length + bt
         hb = order.width + bt
-        # 是否满足 size1（原向或翻转）
         match1 = (abs(wb - w1) < 1 and abs(hb - h1) < 1) or (abs(wb - h1) < 1 and abs(hb - w1) < 1)
-        # 是否满足 size2（原向或翻转）
         match2 = (abs(wb - w2) < 1 and abs(hb - h2) < 1) or (abs(wb - h2) < 1 and abs(hb - w2) < 1)
-        
-        if match1 or match2:
-            pool.append((i, order))
-            
+
+        if match1:
+            pool1.append((i, order))
+        elif match2:
+            pool2.append((i, order))
+
     cuts: List[Cut] = []
     packed_indices = set()
-    
+
     current_y = 0.0
-    
-    # 浇筑第一群层 (r1 行)
+
     for _ in range(r1):
         current_x = 0.0
         row_h = float(h1)
         for _ in range(c1):
-            if pool:
-                idx, order = pool.pop(0)
-                # 检查此零件当前姿态是否天然匹配 w1，否则必须旋转
+            if pool1:
+                idx, order = pool1.pop(0)
                 actual_w = float(order.length)
                 actual_h = float(order.width)
-                if abs((order.length + bt) - w1) >= 1: # 宽度不符，说明必须旋转才适配
+                if abs((order.length + bt) - w1) >= 1:
                     actual_w = float(order.width)
                     actual_h = float(order.length)
-                    
+
                 cuts.append(Cut(plate=order, x1=current_x, y1=current_y, x2=current_x+actual_w, y2=current_y+actual_h, is_stock=False))
                 packed_indices.add(idx)
                 current_x += w1
         current_y += row_h
-        
-    # 浇筑第二群层 (r2 行)
+
     for _ in range(r2):
         current_x = 0.0
         row_h = float(h2)
         for _ in range(c2):
-            if pool:
-                idx, order = pool.pop(0)
-                # 同理：检查此零件对于第二种楼层需求是否匹配 w2，否则必须旋转
+            if pool2:
+                idx, order = pool2.pop(0)
                 actual_w = float(order.length)
                 actual_h = float(order.width)
                 if abs((order.length + bt) - w2) >= 1:
                     actual_w = float(order.width)
                     actual_h = float(order.length)
-                    
+
                 cuts.append(Cut(plate=order, x1=current_x, y1=current_y, x2=current_x+actual_w, y2=current_y+actual_h, is_stock=False))
                 packed_indices.add(idx)
                 current_x += w2

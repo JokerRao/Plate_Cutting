@@ -10,15 +10,18 @@ export default function UpdatePasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
 
-  // 检查用户是否已登录
   useEffect(() => {
-    const checkUser = async () => {
+    const checkSession = async () => {
+      const hash = window.location.hash;
+      const isRecoveryFlow = hash.includes('type=recovery') || hash.includes('type=signup');
+      if (isRecoveryFlow) return;
+
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         router.push('/project');
       }
     };
-    checkUser();
+    checkSession();
   }, [router]);
 
   const handleUpdatePassword = async () => {
@@ -34,14 +37,19 @@ export default function UpdatePasswordPage() {
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({
-      password,
-    });
-    if (error) {
-      setMessage(error.message);
-    } else {
-      setMessage('密码重置成功！正在跳转...');
-      router.push('/login');
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password,
+      });
+      if (error) {
+        setMessage(error.message);
+      } else {
+        setMessage('密码重置成功！正在跳转...');
+        await supabase.auth.signOut();
+        router.push('/login');
+      }
+    } catch {
+      setMessage('密码重置过程中出现错误');
     }
   };
 

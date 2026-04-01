@@ -39,17 +39,25 @@ export default function LoginPage() {
   }
 
   const handleResetPassword = async () => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'http://localhost:3000/login/update-password', // 修改为你的前端链接
-    })
-    if (error) {
-      setMessage(error.message)
-    } else {
-      setMessage('重置密码邮件已发送，请检查邮箱')
+    if (!email) {
+      setMessage('请输入邮箱地址')
+      return
+    }
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login/update-password`,
+      })
+      if (error) {
+        setMessage(error.message)
+      } else {
+        setMessage('重置密码邮件已发送，请检查邮箱')
+      }
+    } catch {
+      setMessage('发送重置邮件时出现错误')
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleLogin()
     }
@@ -72,7 +80,7 @@ export default function LoginPage() {
           placeholder="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyDown}
         />
         <button
           type="button"

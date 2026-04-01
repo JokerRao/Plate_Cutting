@@ -12,23 +12,7 @@ import ProjectLayoutNavPills, {
 } from '@/components/ProjectLayoutNavPills';
 import { groupCutPlansInOrder, getGroupAccent } from '@/utils/cutPlanGroup';
 
-/** 模块级缓存：同一 projectId 翻页时无需重新请求 Supabase */
-type ProjectCache = {
-  name: string;
-  cuttingPlans: any[];
-  orders: any[];
-  others: any[];
-};
-const _projectCache = new Map<string, ProjectCache>();
-
-/** 清除指定项目的布局缓存（切板后调用以保证数据新鲜） */
-export function invalidateLayoutCache(projectId?: string) {
-  if (projectId) {
-    _projectCache.delete(projectId);
-  } else {
-    _projectCache.clear();
-  }
-}
+import { _projectCache, type ProjectCache } from '@/utils/layoutCache';
 
 const DIM_LINE = '#94a3b8';
 const DIM_TEXT = '#0f172a';
@@ -859,7 +843,7 @@ export default function LayoutPage() {
                 className="inline-flex h-8 shrink-0 items-center rounded-md border border-[rgba(0,122,255,0.22)] bg-[rgba(0,122,255,0.08)] px-2.5 text-xs font-medium tabular-nums text-[var(--accent)]"
                 title="当前页板材利用率"
               >
-                使用率 {(layoutData.rate * 100).toFixed(1)}%
+                使用率 {((layoutData.rate ?? 0) * 100).toFixed(1)}%
               </span>
             ) : null}
             <span

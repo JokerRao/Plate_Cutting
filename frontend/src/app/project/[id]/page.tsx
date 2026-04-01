@@ -9,7 +9,7 @@ import GalleryToast from '@/components/GalleryToast';
 import ProjectLayoutNavPills, { ProjectListNavButton } from '@/components/ProjectLayoutNavPills';
 import { useAppDialog } from '@/components/AppDialog';
 import { getApiUrl, API_CONFIG } from '@/config/api';
-import { invalidateLayoutCache } from '@/app/layout/[id]/[page]/page';
+import { invalidateLayoutCache } from '@/utils/layoutCache';
 
 /** 用于脏检查：对每个对象的键排序后再序列化，避免 JSON.stringify 键序不一致导致误判「有未保存更改」 */
 function stableStringifyForDirtyCheck(value: unknown): string {

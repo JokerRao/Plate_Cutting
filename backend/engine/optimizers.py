@@ -447,14 +447,19 @@ class PlateOptimizer:
                 for key, weight in group_weights.items()
             }
 
-            # 轮询排列，但考虑权重
             max_count = max(len(group) for _, group in sorted_groups)
+            added = set()
             for round_idx in range(max_count):
                 for key, group in sorted_groups:
                     if round_idx < len(group):
-                        # 根据权重决定是否在这一轮添加
                         if round_idx < group_targets.get(key, len(group)):
                             result.append(group[round_idx])
+                            added.add(id(group[round_idx]))
+
+            for key, group in sorted_groups:
+                for item in group:
+                    if id(item) not in added:
+                        result.append(item)
 
             return result
 
