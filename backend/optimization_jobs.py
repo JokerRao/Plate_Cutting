@@ -25,8 +25,12 @@ class OptimizationJobRegistry:
 
     def _evict_oldest(self) -> None:
         while len(self._jobs) >= self._max_jobs:
-            oldest_id = min(
-                self._jobs.items(), key=lambda x: x[1].created_at)[0]
+            # Prefer evicting completed or failed jobs first
+            finished_jobs = {k: v for k, v in self._jobs.items() if v.status in ("completed", "failed")}
+            if finished_jobs:
+                oldest_id = min(finished_jobs.items(), key=lambda x: x[1].created_at)[0]
+            else:
+                oldest_id = min(self._jobs.items(), key=lambda x: x[1].created_at)[0]
             del self._jobs[oldest_id]
 
     async def create_pending(self) -> str:

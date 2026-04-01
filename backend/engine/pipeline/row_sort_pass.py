@@ -89,9 +89,8 @@ def apply_row_sort_pass(
         if orig_positions == new_positions:
             continue
 
-        tpl = plate_templates[min(idx, len(plate_templates) - 1)]
         from engine.pipeline.cut_simplifier import _outer_plate_for_finalize
-        bp = _outer_plate_for_finalize(rep, tpl, bt)
+        bp = _outer_plate_for_finalize(rep, bt)
         new_rep = finalize_plate_output(
             bp,
             new_cuts,

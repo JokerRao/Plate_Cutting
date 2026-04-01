@@ -850,11 +850,17 @@ export default function ProjectDetailPage() {
       .eq('id', projectId)
       .single();
 
-    if (data?.cutted && data.cutted.length > 0) {
-      router.push(`/layout/${projectId}/1`);
-    } else {
-      await dialogAlert('请先进行切板操作', '提示');
+    if (data?.cutted && Array.isArray(data.cutted)) {
+      const last = data.cutted[data.cutted.length - 1];
+      const hasMetadata = last != null && typeof last === 'object' && 'metadata' in last;
+      const plans = hasMetadata ? data.cutted.slice(0, -1) : data.cutted;
+      if (plans.length > 0) {
+        router.push(`/layout/${projectId}/1`);
+        return;
+      }
     }
+    
+    await dialogAlert('请先进行切板操作，或当前暂无有效切板方案', '提示');
   };
 
   const handleCutting = () => void runCuttingPipeline(true);

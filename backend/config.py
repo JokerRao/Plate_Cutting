@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     HOST: str = "127.0.0.1"  # 默认值，可通过环境变量 HOST 覆盖
     PORT: int = 8000  # 默认值，可通过环境变量 PORT 覆盖
     RELOAD: bool = True  # 默认值，可通过环境变量 RELOAD 覆盖
-    LOG_LEVEL: str = "debug"  # 默认值，可通过环境变量 LOG_LEVEL 覆盖
-    DEBUG: bool = True  # 默认值，可通过环境变量 DEBUG 覆盖
+    LOG_LEVEL: str = "info"  # 默认值，可通过环境变量 LOG_LEVEL 覆盖
+    DEBUG: bool = False  # 默认值，可通过环境变量 DEBUG 覆盖
     
     # CORS Configuration
     CORS_ORIGINS: list[str] = [

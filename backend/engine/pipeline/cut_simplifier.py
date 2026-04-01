@@ -296,8 +296,7 @@ def apply_column_sort_pass(
         if orig_positions == new_positions:
             continue  # 无变化
 
-        tpl = plate_templates[min(idx, len(plate_templates) - 1)]
-        bp = _outer_plate_for_finalize(rep, tpl, bt)
+        bp = _outer_plate_for_finalize(rep, bt)
         new_rep = finalize_plate_output(
             bp,
             new_cuts,
@@ -323,7 +322,6 @@ def apply_column_sort_pass(
 
 def _outer_plate_for_finalize(
     rep: Dict[str, Any],
-    template: SmallPlate,
     bt: float,
 ) -> SmallPlate:
     """由结果中的内尺寸 + 锯厚还原 finalize 所需的外尺寸大板。"""
@@ -333,8 +331,8 @@ def _outer_plate_for_finalize(
     return SmallPlate(
         length=int(round(inner_l + bt)),
         width=int(round(inner_w + bt)),
-        plate_id=template.plate_id,
-        quantity=getattr(template, "quantity", 1),
+        plate_id="",
+        quantity=1,
     )
 
 
@@ -381,8 +379,7 @@ def simplify_board_cuts(
         if order_cuts_rep is None or rem:
             continue
 
-        tpl_rep = plate_templates[min(rep_idx, len(plate_templates) - 1)]
-        bp_try = _outer_plate_for_finalize(rep, tpl_rep, bt)
+        bp_try = _outer_plate_for_finalize(rep, bt)
         try_row = finalize_plate_output(
             bp_try,
             order_cuts_rep,
@@ -409,8 +406,7 @@ def simplify_board_cuts(
             if oc is None or r2:
                 group_ok = False
                 break
-            tpl_j = plate_templates[min(j, len(plate_templates) - 1)]
-            bp_j = _outer_plate_for_finalize(rj, tpl_j, bt)
+            bp_j = _outer_plate_for_finalize(rj, bt)
             cand = finalize_plate_output(
                 bp_j,
                 oc,

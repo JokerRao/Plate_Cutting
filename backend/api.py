@@ -216,12 +216,17 @@ def validate_dimensions(plates: List[dict],
                 order.get('length')}x{
                 order.get('width')}"
 
-    # 检查是否所有订单都大于板材
-    min_plate_area = min((p['length'] * p['width'] for p in plates), default=0)
-    all_orders_too_large = all(
-        o['length'] * o['width'] > min_plate_area
-        for o in orders
-    )
+    # 检查是否所有订单都大于最大板材
+    def fits_in_plate(o: dict, p: dict) -> bool:
+        return (o['length'] <= p['length'] and o['width'] <= p['width']) or \
+               (o['length'] <= p['width'] and o['width'] <= p['length'])
+
+    all_orders_too_large = True
+    for o in orders:
+        if any(fits_in_plate(o, p) for p in plates):
+            all_orders_too_large = False
+            break
+
     if all_orders_too_large:
         return False, 1005, "All order pieces are too large for available plates"
 
