@@ -61,11 +61,13 @@ def run_common_dim_strip_then_rectpack(
     if cand_dim <= board_h:
         strip_height = cand_dim
         strip_max_width = board_w
+        rotated = False
     else:
         strip_height = cand_dim
         strip_max_width = board_h
         # swap board logic if cand_dim only fits in length
         board_w, board_h = board_h, board_w
+        rotated = True
         
     # 2. Separate conforming and non-conforming
     conforming = []
@@ -433,66 +435,89 @@ def run_common_dim_strip_then_rectpack(
     stock_optimizer = StockOptimizer(config, stock_algorithm)
     plate_engine = PlateOptimizer(config, inner_algo_class)
 
-    for i, b_strips in enumerate(bins):
-        if i >= len(plate_templates):
+    strips_per_plate = int(board_h // strip_height)
+    if strips_per_plate < 1:
+        strips_per_plate = 1
+        
+    plate_idx = 0
+    for i in range(0, len(bins), strips_per_plate):
+        if plate_idx >= len(plate_templates):
             logger.warning("CommonDimStrip: Out of plate templates")
             break
 
-        bp = clone_plate_template(plate_templates[i])
+        chunk = bins[i:i+strips_per_plate]
+        bp = clone_plate_template(plate_templates[plate_idx])
         cuts = []
-        current_x = 0.0
 
-        for s in b_strips:
-            if not s['is_macro']:
-                p = s['p']
-                cuts.append(Cut(
-                    plate=p,
-                    x1=current_x,
-                    y1=0.0,
-                    x2=current_x + s['w_raw'],
-                    y2=float(s['h_raw']),
-                    is_stock=False
-                ))
-                current_x += s['w1d']
-            else:
-                nx1, ny1, w1, h1 = s['layout1']
+        for k, b_strips in enumerate(chunk):
+            y_offset = k * strip_height
+            current_x = 0.0
 
-                # Block 1 (bottom)
-                bx = current_x
-                by = 0.0
-                p_idx = 0
-                for _y in range(ny1):
-                    for _x in range(nx1):
-                        p = s['p1'][p_idx]
-                        p_idx += 1
-                        cx = bx + _x * (w1 + bt)
-                        cy = by + _y * (h1 + bt)
-                        cuts.append(Cut(plate=p, x1=cx, y1=cy, x2=cx+w1, y2=cy+h1, is_stock=False))
-
-                # Block 2 (top) — only present for dual-type macros
-                if s['layout2'] is not None:
-                    nx2, ny2, w2, h2 = s['layout2']
+            for s in b_strips:
+                if not s['is_macro']:
+                    p = s['p']
+                    cx = current_x
+                    cy = y_offset + 0.0
+                    cw = s['w_raw']
+                    ch = float(s['h_raw'])
+                    
+                    if rotated:
+                        cx, cy, cw, ch = cy, cx, ch, cw
+                    
+                    cuts.append(Cut(
+                        plate=p,
+                        x1=cx,
+                        y1=cy,
+                        x2=cx + cw,
+                        y2=cy + ch,
+                        is_stock=False
+                    ))
+                    current_x += s['w1d']
+                else:
+                    nx1, ny1, w1, h1 = s['layout1']
                     bx = current_x
-                    by = ny1 * h1 + ny1 * bt
+                    by = 0.0
                     p_idx = 0
-                    for _y in range(ny2):
-                        for _x in range(nx2):
-                            p = s['p2'][p_idx]
+                    for _y in range(ny1):
+                        for _x in range(nx1):
+                            p = s['p1'][p_idx]
                             p_idx += 1
-                            cx = bx + _x * (w2 + bt)
-                            cy = by + _y * (h2 + bt)
-                            cuts.append(Cut(plate=p, x1=cx, y1=cy, x2=cx+w2, y2=cy+h2, is_stock=False))
+                            cx = bx + _x * (w1 + bt)
+                            cy = y_offset + by + _y * (h1 + bt)
+                            cw, ch = w1, h1
+                            if rotated:
+                                cx, cy, cw, ch = cy, cx, ch, cw
+                            cuts.append(Cut(plate=p, x1=cx, y1=cy, x2=cx+cw, y2=cy+ch, is_stock=False))
 
-                current_x += s['w1d']
+                    # Block 2 (top) — only present for dual-type macros
+                    if s['layout2'] is not None:
+                        nx2, ny2, w2, h2 = s['layout2']
+                        bx = current_x
+                        by = ny1 * h1 + ny1 * bt
+                        p_idx = 0
+                        for _y in range(ny2):
+                            for _x in range(nx2):
+                                p = s['p2'][p_idx]
+                                p_idx += 1
+                                cx = bx + _x * (w2 + bt)
+                                cy = y_offset + by + _y * (h2 + bt)
+                                cw, ch = w2, h2
+                                if rotated:
+                                    cx, cy, cw, ch = cy, cx, ch, cw
+                                cuts.append(Cut(plate=p, x1=cx, y1=cy, x2=cx+cw, y2=cy+ch, is_stock=False))
+
+                    current_x += s['w1d']
 
         row = finalize_plate_output(bp, cuts, stock_plates, stock_optimizer, optim, config, converter)
         results.append(row)
-        row_template_idx.append(i)
+        row_template_idx.append(plate_idx)
+        plate_idx += 1
 
     # Apply the same low-utilization repack pass used by other algorithms
     return finalize_metrics_and_refine(
         results,
         row_template_idx,
+        non_conforming,
         plate_templates,
         plate_engine,
         stock_optimizer,

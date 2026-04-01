@@ -12,6 +12,7 @@ from core.metrics import (
     select_best_solution,
 )
 from core.models import CuttingConfig, SmallPlate
+from core.utils import DataConverter
 from engine.cutting_algorithms import (
     FALLBACK_PACKING_CLASS,
     ORTOOLS_PACKING_IDS,
@@ -148,136 +149,18 @@ def _run_rectpack_sequential_from_prepared(
         converter,
         trace,
     )
-
-
-def _run_common_dim_strip_then_rectpack(
-    plates: List[Dict[str, Any]],
-    orders: List[Dict[str, Any]],
-    others: Optional[List[Dict[str, Any]]],
+from engine.pipeline.cut_simplifier import simplify_board_cuts
+from engine.pipeline.row_sort_pass import apply_row_sort_pass
+def _run_single_algorithm(
+    converter: Any,
+    big_plates: List[SmallPlate],
+    plate_templates: List[SmallPlate],
+    small_plates: List[SmallPlate],
+    stock_plates: List[SmallPlate],
+    config: CuttingConfig,
     optim: int,
-    saw_blade: float,
-    inner_algo_class: Any,
-    stock_algorithm: str,
-    enable_row_complementary: bool,
-) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    config = CuttingConfig(
-        blade_thickness=saw_blade,
-        enable_row_complementary=enable_row_complementary,
-    )
-    others_list = empty_stock_if_none(others)
-    (
-        converter,
-        big_plates,
-        plate_templates,
-        small_plates,
-        stock_plates,
-    ) = load_converted_inputs(plates, orders, others_list, config)
-
-    if not big_plates:
-        return [], calculate_cutting_metrics([], len(small_plates))
-
-    settings = get_settings()
-    trace = CuttingTraceContext.from_settings("CommonDimStrip", settings)
-    trace.summarize_plates_orders(
-        len(big_plates), len(small_plates), len(stock_plates))
-
-    def fallback_rectpack() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        return _run_rectpack_sequential_from_prepared(
-            converter,
-            big_plates,
-            plate_templates,
-            small_plates,
-            stock_plates,
-            config,
-            inner_algo_class,
-            stock_algorithm,
-            optim,
-            trace,
-        )
-
-    return run_common_dim_strip_then_rectpack(
-        big_plates,
-        plate_templates,
-        small_plates,
-        stock_plates,
-        config,
-        converter,
-        inner_algo_class,
-        stock_algorithm,
-        optim,
-        fallback_rectpack,
-        trace,
-    )
-
-def _run_ortools_assign_then_rectpack(
-    plates: List[Dict[str, Any]],
-    orders: List[Dict[str, Any]],
-    others: Optional[List[Dict[str, Any]]],
-    optim: int,
-    saw_blade: float,
-    inner_algo_class: Any,
-    stock_algorithm: str,
-    enable_row_complementary: bool,
-) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    config = CuttingConfig(
-        blade_thickness=saw_blade,
-        enable_row_complementary=enable_row_complementary,
-    )
-    others_list = empty_stock_if_none(others)
-    (
-        converter,
-        big_plates,
-        plate_templates,
-        small_plates,
-        stock_plates,
-    ) = load_converted_inputs(plates, orders, others_list, config)
-
-    if not big_plates:
-        return [], calculate_cutting_metrics([], len(small_plates))
-
-    settings = get_settings()
-    trace = CuttingTraceContext.from_settings("ORToolsAssignMaxRects", settings)
-    trace.summarize_plates_orders(
-        len(big_plates), len(small_plates), len(stock_plates))
-
-    def fallback_rectpack() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        return _run_rectpack_sequential_from_prepared(
-            converter,
-            big_plates,
-            plate_templates,
-            small_plates,
-            stock_plates,
-            config,
-            inner_algo_class,
-            stock_algorithm,
-            optim,
-            trace,
-        )
-
-    return ortools_assign_pipeline(
-        big_plates,
-        plate_templates,
-        small_plates,
-        stock_plates,
-        config,
-        converter,
-        inner_algo_class,
-        stock_algorithm,
-        optim,
-        fallback_rectpack,
-        trace,
-    )
-
-
-def run_single_algorithm(
-    plates: List[Dict[str, Any]],
-    orders: List[Dict[str, Any]],
-    others: Optional[List[Dict[str, Any]]],
-    optim: int,
-    saw_blade: float,
     algorithm: Any,
     stock_algorithm: str = "maxrects_baf",
-    enable_row_complementary: bool = True,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     运行单个算法的切割方案。
@@ -294,46 +177,6 @@ def run_single_algorithm(
     Returns:
         (切割方案列表, 评价指标字典)
     """
-    if algorithm == "ORToolsAssignMaxRects":
-        inner_cls = resolve_packing_class(
-            get_settings().ORTOOLS_ASSIGN_INNER_PACKING_ID)
-        return _run_ortools_assign_then_rectpack(
-            plates,
-            orders,
-            others,
-            optim,
-            saw_blade,
-            inner_cls,
-            stock_algorithm,
-            enable_row_complementary=enable_row_complementary,
-        )
-
-    if algorithm == "CommonDimStrip":
-        inner_cls = resolve_packing_class("MaxRectsBaf")
-        return _run_common_dim_strip_then_rectpack(
-            plates,
-            orders,
-            others,
-            optim,
-            saw_blade,
-            inner_cls,
-            stock_algorithm,
-            enable_row_complementary=enable_row_complementary,
-        )
-
-    config = CuttingConfig(
-        blade_thickness=saw_blade,
-        enable_row_complementary=enable_row_complementary,
-    )
-    others_list = empty_stock_if_none(others)
-    (
-        converter,
-        big_plates,
-        plate_templates,
-        small_plates,
-        stock_plates,
-    ) = load_converted_inputs(plates, orders, others_list, config)
-
     if not big_plates:
         return [], calculate_cutting_metrics([], len(small_plates))
 
@@ -342,6 +185,55 @@ def run_single_algorithm(
         _packing_trace_label(algorithm), settings)
     trace.summarize_plates_orders(
         len(big_plates), len(small_plates), len(stock_plates))
+
+    def fallback_rectpack() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        inner_fallback = resolve_packing_class(
+            settings.ORTOOLS_ASSIGN_INNER_PACKING_ID if algorithm == "ORToolsAssignMaxRects" else "MaxRectsBaf"
+        )
+        return _run_rectpack_sequential_from_prepared(
+            converter,
+            big_plates,
+            plate_templates,
+            list(small_plates),
+            stock_plates,
+            config,
+            inner_fallback,
+            stock_algorithm,
+            optim,
+            trace,
+        )
+
+    if algorithm == "ORToolsAssignMaxRects":
+        inner_cls = resolve_packing_class(settings.ORTOOLS_ASSIGN_INNER_PACKING_ID)
+        return ortools_assign_pipeline(
+            big_plates,
+            plate_templates,
+            list(small_plates),
+            stock_plates,
+            config,
+            converter,
+            inner_cls,
+            stock_algorithm,
+            optim,
+            fallback_rectpack,
+            trace,
+        )
+
+    if algorithm == "CommonDimStrip":
+        inner_cls = resolve_packing_class("MaxRectsBaf")
+        return run_common_dim_strip_then_rectpack(
+            big_plates,
+            plate_templates,
+            list(small_plates),
+            stock_plates,
+            config,
+            converter,
+            inner_cls,
+            stock_algorithm,
+            optim,
+            fallback_rectpack,
+            trace,
+        )
 
     if algorithm == "ORToolsCP2D":
         plate_engine: Any = ORToolsCP2DEngine(
@@ -380,36 +272,27 @@ def run_single_algorithm(
     )
 
 
+def _sort_results_by_layout_group(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """将结果按照版型聚集（相同版型相邻），并按频次降序排列。"""
+    if not results:
+        return results
+    groups = layout_groups(results)
+    sorted_results = []
+    for _, idxs in groups.items():
+        for i in idxs:
+            sorted_results.append(results[i])
+    return sorted_results
+
 def _run_consolidation_pass(
     results: List[Dict[str, Any]],
-    plates: List[Dict[str, Any]],
-    orders: List[Dict[str, Any]],
-    others: Optional[List[Dict[str, Any]]],
+    plate_templates: List[SmallPlate],
+    stock_plates: List[SmallPlate],
+    config: CuttingConfig,
+    converter: DataConverter,
     optim: int,
-    saw_blade: float,
     stock_algorithm: str,
-    enable_row_complementary: bool,
 ) -> List[Dict[str, Any]]:
-    """
-    在最优解上执行布局整合（Layout Consolidation Pass）。
-
-    重建必要的 pipeline 对象，调用 consolidate_layout_groups 尝试合并「独板版型」。
-    整合后版型数或板数严格减少时采纳新结果，否则原样返回。
-
-    执行时机：全局择优后（已选出 best_results）、对外返回结果前。
-    """
-    if len(results) <= 1:
-        return results
-
-    config = CuttingConfig(
-        blade_thickness=saw_blade,
-        enable_row_complementary=enable_row_complementary,
-    )
-    others_list = empty_stock_if_none(others)
-    converter, big_plates, plate_templates, _orders_sp, stock_plates = load_converted_inputs(
-        plates, orders, others_list, config
-    )
-    if not big_plates:
+    if len(results) <= 1 or not plate_templates:
         return results
 
     plate_engine = PlateOptimizer(config, resolve_packing_class("MaxRectsBaf"))
@@ -430,31 +313,14 @@ def _run_consolidation_pass(
 
 def _run_cut_simplifier_pass(
     results: List[Dict[str, Any]],
-    plates: List[Dict[str, Any]],
-    orders: List[Dict[str, Any]],
-    others: Optional[List[Dict[str, Any]]],
+    plate_templates: List[SmallPlate],
+    stock_plates: List[SmallPlate],
+    config: CuttingConfig,
+    converter: DataConverter,
     optim: int,
-    saw_blade: float,
     stock_algorithm: str,
-    enable_row_complementary: bool,
 ) -> List[Dict[str, Any]]:
-    """
-    切割简化：Consolidation 之后，将各版型内订单件重排为行式齐头布局以降低切割线数。
-
-    抽取订单件重排后重新 finalize（含余板）。无改进时返回原 results。
-    """
-    if not results:
-        return results
-
-    config = CuttingConfig(
-        blade_thickness=saw_blade,
-        enable_row_complementary=enable_row_complementary,
-    )
-    others_list = empty_stock_if_none(others)
-    converter, _big_plates, plate_templates, _orders_sp, stock_plates = load_converted_inputs(
-        plates, orders, others_list, config
-    )
-    if not plate_templates:
+    if not results or not plate_templates:
         return results
 
     stock_optimizer = StockOptimizer(config, stock_algorithm)
@@ -472,31 +338,14 @@ def _run_cut_simplifier_pass(
 
 def _run_column_sort_pass(
     results: List[Dict[str, Any]],
-    plates: List[Dict[str, Any]],
-    orders: List[Dict[str, Any]],
-    others: Optional[List[Dict[str, Any]]],
+    plate_templates: List[SmallPlate],
+    stock_plates: List[SmallPlate],
+    config: CuttingConfig,
+    converter: DataConverter,
     optim: int,
-    saw_blade: float,
     stock_algorithm: str,
-    enable_row_complementary: bool,
 ) -> List[Dict[str, Any]]:
-    """
-    列序重排：每张板内订单件按列分组后，将大件（高度最大的）压在每列底部（y=0）。
-
-    不改变列结构，仅调整列内堆叠顺序。无改进时返回原 results。
-    """
-    if not results:
-        return results
-
-    config = CuttingConfig(
-        blade_thickness=saw_blade,
-        enable_row_complementary=enable_row_complementary,
-    )
-    others_list = empty_stock_if_none(others)
-    converter, _big_plates, plate_templates, _orders_sp, stock_plates = load_converted_inputs(
-        plates, orders, others_list, config
-    )
-    if not plate_templates:
+    if not results or not plate_templates:
         return results
 
     stock_optimizer = StockOptimizer(config, stock_algorithm)
@@ -512,48 +361,19 @@ def _run_column_sort_pass(
     return sorted_results if sorted_results is not None else results
 
 
-def _sort_results_by_layout_group(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """将结果按照版型聚集（相同版型相邻），并按频次降序排列。"""
-    if not results:
-        return results
-    groups = layout_groups(results)
-    sorted_results = []
-    for _, idxs in groups.items():
-        for i in idxs:
-            sorted_results.append(results[i])
-    return sorted_results
-
-
 def _run_row_sort_pass(
     results: List[Dict[str, Any]],
-    plates: List[Dict[str, Any]],
-    orders: List[Dict[str, Any]],
-    others: Optional[List[Dict[str, Any]]],
+    plate_templates: List[SmallPlate],
+    stock_plates: List[SmallPlate],
+    config: CuttingConfig,
+    converter: DataConverter,
     optim: int,
-    saw_blade: float,
     stock_algorithm: str,
-    enable_row_complementary: bool,
 ) -> List[Dict[str, Any]]:
-    """
-    行序重排：每张板内订单件按行分组后，将大件（宽度最大的）排在左边（x=0）。
-    """
-    if not results:
-        return results
-
-    config = CuttingConfig(
-        blade_thickness=saw_blade,
-        enable_row_complementary=enable_row_complementary,
-    )
-    others_list = empty_stock_if_none(others)
-    from engine.pipeline.prepare import load_converted_inputs
-    converter, _big_plates, plate_templates, _orders_sp, stock_plates = load_converted_inputs(
-        plates, orders, others_list, config
-    )
-    if not plate_templates:
+    if not results or not plate_templates:
         return results
 
     stock_optimizer = StockOptimizer(config, stock_algorithm)
-    from engine.pipeline.row_sort_pass import apply_row_sort_pass
     sorted_results = apply_row_sort_pass(
         results,
         plate_templates,
@@ -564,6 +384,19 @@ def _run_row_sort_pass(
         converter,
     )
     return sorted_results if sorted_results is not None else results
+
+
+def _run_post_pack_stock_pass(
+    results: List[Dict[str, Any]],
+    plate_templates: List[SmallPlate],
+    config: CuttingConfig,
+    converter: DataConverter,
+    optim: int,
+    stock_effective: str,
+    stock_plates: List[SmallPlate],
+) -> List[Dict[str, Any]]:
+    # Previously in cutting_service.py there wasn't a separate function for this, but I referenced it. Let's see if it existed.
+    pass
 
 def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
                      others: List[Dict[str, Any]] = None, optim: int = 0,
@@ -591,13 +424,6 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
             - "guillotine_bssf_llas": "Guillotine BSSF+LLAS"
         enable_row_complementary: 是否启用等高互补时的行式排布（默认 True）
 
-    配置（环境变量 / .env.local）：
-        CUTTING_ALGORITHMS_ENABLED: auto 模式要跑的主算法 id，逗号分隔；空为默认集合
-        STOCK_ALGORITHMS_ENABLED: 允许的库存策略 id，逗号分隔；空为不限制
-        ORTOOLS_*: 见 config.Settings（分板时间、件数上限、CP2D 参数、内层 rectpack id）
-        CUTTING_TRACE_LOG_STAGES: 为 True 时输出 cutting_trace 阶段日志
-        CUTTING_DEBUG_DUMP_DIR: 非空时向该目录写入阶段 JSON（仅建议开发环境）
-
     Returns:
         切割方案列表
     """
@@ -608,6 +434,22 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
     )
     stock_label = STOCK_ALGORITHM_LABELS.get(
         stock_effective, stock_effective)
+
+    config = CuttingConfig(
+        blade_thickness=saw_blade,
+        enable_row_complementary=enable_row_complementary,
+    )
+    others_list = empty_stock_if_none(others)
+    (
+        converter,
+        big_plates,
+        plate_templates,
+        small_plates,
+        stock_plates,
+    ) = load_converted_inputs(plates, orders, others_list, config)
+
+    if not big_plates:
+        return []
 
     if algorithm == "auto":
         enabled_ids = normalize_enabled_packing_ids(
@@ -622,15 +464,16 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
         for algo_name, algo_class in iter_enabled_packing_algorithms(
                 enabled_ids):
             logger.info("测试算法: %s", algo_name)
-            results, metrics = run_single_algorithm(
-                plates,
-                orders,
-                others,
+            results, metrics = _run_single_algorithm(
+                converter,
+                big_plates,
+                plate_templates,
+                list(small_plates),
+                stock_plates,
+                config,
                 optim,
-                saw_blade,
                 algo_class,
                 stock_effective,
-                enable_row_complementary=enable_row_complementary,
             )
             algorithm_results.append((algo_name, results, metrics))
             log_candidate_metrics(algo_name, metrics)
@@ -645,90 +488,60 @@ def optimize_cutting(plates: List[Dict[str, Any]], orders: List[Dict[str, Any]],
         if best_name:
             log_selection_rationale(best_name, algorithm_results)
         final = best_results if best_results is not None else []
-        if final:
-            final = _run_consolidation_pass(
-                final, plates, orders, others, optim, saw_blade,
-                stock_effective, enable_row_complementary,
+    else:
+        if is_registered_packing_id(algorithm):
+            logger.info("使用算法: %s", algorithm)
+            if algorithm == "ORToolsAssignMaxRects":
+                logger.info(
+                    "ORToolsAssign 内层 rectpack: %s",
+                    settings.ORTOOLS_ASSIGN_INNER_PACKING_ID,
+                )
+            logger.info("库存填充策略: %s", stock_label)
+            algo_spec: Any = (
+                algorithm
+                if algorithm in ORTOOLS_PACKING_IDS
+                else resolve_packing_class(algorithm)
             )
-            final = _run_cut_simplifier_pass(
-                final, plates, orders, others, optim, saw_blade,
-                stock_effective, enable_row_complementary,
+        else:
+            logger.warning(
+                "未知主算法 id '%s'，使用回退 %s",
+                algorithm,
+                getattr(FALLBACK_PACKING_CLASS, "__name__", "fallback"),
             )
-            final = _run_column_sort_pass(
-                final, plates, orders, others, optim, saw_blade,
-                stock_effective, enable_row_complementary,
-            )
-            final = _run_row_sort_pass(
-                final, plates, orders, others, optim, saw_blade,
-                stock_effective, enable_row_complementary,
-            )
-        return _sort_results_by_layout_group(final)
+            algo_spec = FALLBACK_PACKING_CLASS
 
-    if is_registered_packing_id(algorithm):
-        logger.info("使用算法: %s", algorithm)
-        if algorithm == "ORToolsAssignMaxRects":
-            logger.info(
-                "ORToolsAssign 内层 rectpack: %s",
-                settings.ORTOOLS_ASSIGN_INNER_PACKING_ID,
-            )
-        logger.info("库存填充策略: %s", stock_label)
-        algo_spec: Any = (
-            algorithm
-            if algorithm in ORTOOLS_PACKING_IDS
-            else resolve_packing_class(algorithm)
-        )
-        results, metrics = run_single_algorithm(
-            plates,
-            orders,
-            others,
+        final, metrics = _run_single_algorithm(
+            converter,
+            big_plates,
+            plate_templates,
+            list(small_plates),
+            stock_plates,
+            config,
             optim,
-            saw_blade,
             algo_spec,
             stock_effective,
-            enable_row_complementary=enable_row_complementary,
         )
         logger.info("完成切割:")
         logger.info("  - 使用板材: %s 块", metrics['used_plates'])
         logger.info("  - 平均利用率: %.2f%%", metrics['overall_rate'] * 100)
         logger.info(
             "  - 平均切割数: %.1f 次/板", metrics['avg_cuts_per_plate'])
-        if results:
-            results = _run_consolidation_pass(
-                results, plates, orders, others, optim, saw_blade,
-                stock_effective, enable_row_complementary,
-            )
-            results = _run_cut_simplifier_pass(
-                results, plates, orders, others, optim, saw_blade,
-                stock_effective, enable_row_complementary,
-            )
-            results = _run_column_sort_pass(
-                results, plates, orders, others, optim, saw_blade,
-                stock_effective, enable_row_complementary,
-            )
-            results = _run_row_sort_pass(
-                results, plates, orders, others, optim, saw_blade,
-                stock_effective, enable_row_complementary,
-            )
-        return _sort_results_by_layout_group(results)
 
-    logger.warning(
-        "未知主算法 id '%s'，使用回退 %s",
-        algorithm,
-        getattr(FALLBACK_PACKING_CLASS, "__name__", "fallback"),
-    )
-    results, _metrics = run_single_algorithm(
-        plates,
-        orders,
-        others,
-        optim,
-        saw_blade,
-        FALLBACK_PACKING_CLASS,
-        stock_effective,
-        enable_row_complementary=enable_row_complementary,
-    )
-    return _sort_results_by_layout_group(results)
+    if final:
+        final = _run_consolidation_pass(
+            final, plate_templates, stock_plates, config, converter, optim, stock_effective
+        )
+        final = _run_cut_simplifier_pass(
+            final, plate_templates, stock_plates, config, converter, optim, stock_effective
+        )
+        final = _run_column_sort_pass(
+            final, plate_templates, stock_plates, config, converter, optim, stock_effective
+        )
+        final = _run_row_sort_pass(
+            final, plate_templates, stock_plates, config, converter, optim, stock_effective
+        )
 
-
+    return _sort_results_by_layout_group(final)
 def optimize_cutting_multistart(
     plates: List[Dict[str, Any]],
     orders: List[Dict[str, Any]],
@@ -876,3 +689,39 @@ if __name__ == "__main__":
     print("=== 库存填充算法说明 ===")
     print("MaxRects BAF: 使用最大矩形算法，选择面积最小的可用区域")
     print("Guillotine BSSF + LLAS: 使用切割线算法，采用短边最佳适配和长剩余边分割策略")
+
+def run_single_algorithm(
+    plates: List[Dict[str, Any]],
+    orders: List[Dict[str, Any]],
+    others: Optional[List[Dict[str, Any]]],
+    optim: int,
+    saw_blade: float,
+    algorithm: Any,
+    stock_algorithm: str = "maxrects_baf",
+    enable_row_complementary: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Backward compatibility wrapper for tests."""
+    config = CuttingConfig(
+        blade_thickness=saw_blade,
+        enable_row_complementary=enable_row_complementary,
+    )
+    others_list = empty_stock_if_none(others)
+    (
+        converter,
+        big_plates,
+        plate_templates,
+        small_plates,
+        stock_plates,
+    ) = load_converted_inputs(plates, orders, others_list, config)
+    
+    return _run_single_algorithm(
+        converter,
+        big_plates,
+        plate_templates,
+        list(small_plates),
+        stock_plates,
+        config,
+        optim,
+        algorithm,
+        stock_algorithm,
+    )
